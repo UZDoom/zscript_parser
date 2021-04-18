@@ -24,6 +24,24 @@ pub struct ParserResult {
 	string_interner: StringInterner
 }
 
+impl std::fmt::Display for ParserResult {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		if self.errs.len() > 0 {
+			todo!()
+		}
+		if let Some(a) = &self.ast {
+			let mut builder = ptree::TreeBuilder::new("AST".to_string());
+			a.tree(&(&self.name_interner, &self.string_interner), &mut builder);
+			let t = builder.build();
+			let mut cursor: std::io::Cursor<Vec<u8>> = std::io::Cursor::new(Vec::new());
+			ptree::write_tree(&t, &mut cursor).unwrap();
+			let data = cursor.into_inner();
+			write!(f, "{}", std::str::from_utf8(&data).unwrap())?;
+		}
+		Ok(())
+	}
+}
+
 macro_rules! define_simple_getter {
 	($name: ident -> $ret: ty: $p: pat, $v: expr) => {
 		#[inline(always)]
@@ -1015,6 +1033,10 @@ impl<'src> Parser<'src> {
 	}
 
 	fn get_single_type(&mut self) -> Result<Option<Type>, ParsingError> {
+		if self.get_keyword(&[Keyword::Let]).is_some() {
+			return Ok(Some(Type::Let));
+		}
+
 		if self.get_keyword(&[Keyword::Class]).is_some() {
 			if self.get_punc(&[Punctuation::LeftAngle]).is_none() {
 				return Ok(Some(Type::Class(None)));
@@ -1169,11 +1191,6 @@ impl<'src> Parser<'src> {
 		};
 
 		let ex = self.get_ident();
-		dbg!(&param_type);
-		if let Type::SingleUserType(Identifier(i)) = param_type {
-			dbg!(self.name_interner.string(i));
-		}
-		dbg!(&self.tokenizer);
 		let name = self.expect(ex, "an identifier")?;
 
 		let init = if self.get_punc(&[Punctuation::Assign]).is_some() {
@@ -1486,7 +1503,7 @@ impl<'src> Parser<'src> {
 		let inners = self.get_class_body()?;
 
 		Ok(Some(ClassDefinition {
-			class_name,
+			name: class_name,
 			ancestor,
 			metadata,
 			inners
@@ -1557,7 +1574,7 @@ impl<'src> Parser<'src> {
 		let inners = self.get_mixin_class_body()?;
 
 		Ok(Some(MixinClassDefinition {
-			mixin_name,
+			name: mixin_name,
 			inners
 		}))
 	}
@@ -1648,7 +1665,7 @@ impl<'src> Parser<'src> {
 		let inners = self.get_struct_body()?;
 
 		Ok(Some(StructDefinition {
-			struct_name,
+			name: struct_name,
 			metadata,
 			inners
 		}))
@@ -1668,7 +1685,7 @@ impl<'src> Parser<'src> {
 				let inners = self.get_class_body()?;
 
 				Ok(Some(Extend::Class(ExtendClass {
-					class_name, inners
+					name: class_name, inners
 				})))
 			}
 			Keyword::Struct => {
@@ -1678,7 +1695,7 @@ impl<'src> Parser<'src> {
 				let inners = self.get_struct_body()?;
 
 				Ok(Some(Extend::Struct(ExtendStruct {
-					struct_name, inners
+					name: struct_name, inners
 				})))
 			}
 			_ => unreachable!()

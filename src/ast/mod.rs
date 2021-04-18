@@ -3,6 +3,8 @@ use super::interner::{NameSymbol, StringSymbol};
 use flagset::{FlagSet, flags};
 use vec1::Vec1;
 
+mod print;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopLevelDefinition {
 	Class(ClassDefinition),
@@ -57,7 +59,8 @@ pub enum Type {
 	ReadonlyNativeType(Identifier),
 	Class(Option<DottableId>),
 	Map(Box<(TypeOrArray, TypeOrArray)>),
-	DynArray(Box<TypeOrArray>)
+	DynArray(Box<TypeOrArray>),
+	Let
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,7 +116,7 @@ pub enum ClassInner {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDefinition {
-	pub class_name: Identifier,
+	pub name: Identifier,
 	pub ancestor: Option<DottableId>,
 	pub metadata: ClassMetadata,
 	pub inners: Vec<ClassInner>,
@@ -121,7 +124,7 @@ pub struct ClassDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendClass {
-	pub class_name: Identifier,
+	pub name: Identifier,
 	pub inners: Vec<ClassInner>,
 }
 
@@ -140,7 +143,7 @@ pub enum MixinClassInner {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinClassDefinition {
-	pub mixin_name: Identifier,
+	pub name: Identifier,
 	pub inners: Vec<MixinClassInner>,
 }
 
@@ -169,14 +172,14 @@ pub enum StructInner {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
-	pub struct_name: Identifier,
+	pub name: Identifier,
 	pub metadata: StructMetadata,
 	pub inners: Vec<StructInner>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendStruct {
-	pub struct_name: Identifier,
+	pub name: Identifier,
 	pub inners: Vec<StructInner>,
 }
 
