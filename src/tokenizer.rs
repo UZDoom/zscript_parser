@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use regex::Regex;
 use lazy_static::lazy_static;
-use super::ParsingError;
+
+use super::{ParsingError, Span};
 
 macro_rules! define_token_rule {
 	($reg: expr => $s: ident, $c: ident, $action: expr) => {
@@ -117,6 +118,16 @@ macro_rules! rule_grouping_type {
 pub struct Token<'src> {
 	pub original: &'src str,
 	pub data: TokenData<'src>
+}
+
+impl<'src> Token<'src> {
+	pub fn span(&self, text: &'src str) -> Span {
+		let text_ptr = text.as_ptr() as usize;
+		let self_ptr = self.original.as_ptr() as usize;
+		let start = self_ptr - text_ptr;
+		let end = start + self.original.len();
+		Span { start, end }
+	}
 }
 
 #[derive(Debug, PartialEq)]
@@ -251,7 +262,6 @@ rule_grouping_type!(Keyword, keyword, match_keyword {
 	r#"foreach"#      => ForEach,
 	r#"true"#         => True,
 	r#"false"#        => False,
-	r#"none"#         => None,
 	r#"auto"#         => Auto,
 	r#"flagdef"#      => FlagDef,
 	r#"native"#       => Native,
@@ -393,8 +403,8 @@ fn skip_whitespace<'src>(input: &'src str) -> &'src str {
 		).unwrap();
 	}
 	let mut cur = input;
-	while let Some(s) = RE.find(cur) {
-		cur = &cur[s.end()..]
+	while let Some(s) = RE.shortest_match(cur) {
+		cur = &cur[s..]
 	}
 	cur
 }

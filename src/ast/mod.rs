@@ -1,12 +1,12 @@
+use crate::Span;
 use super::interner::{NameSymbol, StringSymbol};
 
-use flagset::{FlagSet, flags};
 use vec1::Vec1;
 
-mod print;
+pub(crate) mod print;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TopLevelDefinition {
+pub enum TopLevelDefinitionKind {
 	Class(ClassDefinition),
 	Struct(StructDefinition),
 	ExtendClass(ExtendClass),
@@ -14,7 +14,12 @@ pub enum TopLevelDefinition {
 	MixinClass(MixinClassDefinition),
 	Enum(EnumDefinition),
 	Const(ConstDefinition),
-	Include(StringSymbol)
+	Include(StringConst)
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct TopLevelDefinition {
+	pub span: Span,
+	pub kind: TopLevelDefinitionKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,12 +29,29 @@ pub struct TopLevel {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Identifier(pub NameSymbol);
+pub struct Identifier {
+	pub span: Span,
+	pub symbol: NameSymbol
+}
 #[derive(Debug, Clone, PartialEq)]
-pub struct DottableId(pub Vec1<Identifier>);
+pub struct DottableId {
+	pub span: Span,
+	pub ids: Vec1<Identifier>
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringConst {
+	pub span: Span,
+	pub symbol: StringSymbol
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct NameConst {
+	pub span: Span,
+	pub symbol: NameSymbol
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntConst {
+	pub span: Span,
 	pub val: u64,
 	pub long: bool,
 	pub unsigned: bool
@@ -37,21 +59,28 @@ pub struct IntConst {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatConst {
+	pub span: Span,
 	pub val: f64,
 	pub double: bool
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Const {
-	String(StringSymbol),
-	Name(NameSymbol),
+pub enum ConstKind {
+	String(StringConst),
+	Name(NameConst),
 	Int(IntConst),
 	Float(FloatConst),
 	Bool(bool),
+	Null
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Const {
+	pub span: Span,
+	pub kind: ConstKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Type {
+pub enum TypeKind {
 	SingleUserType(Identifier),
 	DottedUserType(DottableId),
 	NativeType(Identifier),
@@ -62,11 +91,21 @@ pub enum Type {
 	DynArray(Box<TypeOrArray>),
 	Let
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct Type {
+	pub span: Span,
+	pub kind: TypeKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TypeOrArray {
+pub enum TypeOrArrayKind {
 	Type(Type),
 	Array(Type, ExprList)
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeOrArray {
+	pub span: Span,
+	pub kind: TypeOrArrayKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,24 +123,23 @@ impl VersionInfo {
 	}
 }
 
-flags! {
-	pub enum ClassFlags: u32 {
-		Abstract,
-		Native,
-		UI,
-		Play
-	}
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClassMetadataItemKind {
+	Abstract,
+	Native,
+	UI,
+	Play,
+	Version(StringConst),
+	Replaces(DottableId),
 }
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct ClassMetadata {
-	pub flags: FlagSet<ClassFlags>,
-	pub version: Option<StringSymbol>,
-	pub replaces: Option<DottableId>
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassMetadataItem {
+	pub span: Span,
+	pub kind: ClassMetadataItemKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ClassInner {
+pub enum ClassInnerKind {
 	Declaration(Declaration),
 	Enum(EnumDefinition),
 	Struct(StructDefinition),
@@ -113,23 +151,30 @@ pub enum ClassInner {
 	StaticConstArray(StaticConstArray),
 	Mixin(Identifier)
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassInner {
+	pub span: Span,
+	pub kind: ClassInnerKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDefinition {
+	pub span: Span,
 	pub name: Identifier,
 	pub ancestor: Option<DottableId>,
-	pub metadata: ClassMetadata,
+	pub metadata: Vec<ClassMetadataItem>,
 	pub inners: Vec<ClassInner>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendClass {
+	pub span: Span,
 	pub name: Identifier,
 	pub inners: Vec<ClassInner>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum MixinClassInner {
+pub enum MixinClassInnerKind {
 	Declaration(Declaration),
 	Enum(EnumDefinition),
 	Struct(StructDefinition),
@@ -140,91 +185,97 @@ pub enum MixinClassInner {
 	Flag(FlagDefinition),
 	StaticConstArray(StaticConstArray)
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct MixinClassInner {
+	pub span: Span,
+	pub kind: MixinClassInnerKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinClassDefinition {
+	pub span: Span,
 	pub name: Identifier,
 	pub inners: Vec<MixinClassInner>,
 }
 
-flags! {
-	pub enum StructFlags: u32 {
-		ClearScope,
-		Native,
-		UI,
-		Play
-	}
+#[derive(Debug, Clone, PartialEq)]
+pub enum StructMetadataItemKind {
+	ClearScope,
+	Native,
+	UI,
+	Play,
+	Version(StringConst)
 }
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct StructMetadata {
-	pub flags: FlagSet<StructFlags>,
-	pub version: Option<StringSymbol>
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructMetadataItem {
+	pub span: Span,
+	pub kind: StructMetadataItemKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum StructInner {
+pub enum StructInnerKind {
 	Declaration(Declaration),
 	Enum(EnumDefinition),
 	Const(ConstDefinition),
 	StaticConstArray(StaticConstArray),
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructInner {
+	pub span: Span,
+	pub kind: StructInnerKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
+	pub span: Span,
 	pub name: Identifier,
-	pub metadata: StructMetadata,
+	pub metadata: Vec<StructMetadataItem>,
 	pub inners: Vec<StructInner>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtendStruct {
+	pub span: Span,
 	pub name: Identifier,
 	pub inners: Vec<StructInner>,
 }
 
-flags! {
-	pub enum DeclarationFlags: u32 {
-		Native,
-		Static,
-		Private,
-		Protected,
-		Latent,
-		Final,
-		Meta,
-		Transient,
-		ReadOnly,
-		Internal,
-		Virtual,
-		Override,
-		Abstract,
-		VarArg,
-		UI,
-		Play,
-		ClearScope,
-		VirtualScope
-	}
-}
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct Deprecated {
-	pub version: StringSymbol,
-	pub message: Option<StringSymbol>
+pub enum DeclarationMetadataItemKind {
+	Native,
+	Static,
+	Private,
+	Protected,
+	Latent,
+	Final,
+	Meta,
+	Transient,
+	ReadOnly,
+	Internal,
+	Virtual,
+	Override,
+	Abstract,
+	VarArg,
+	UI,
+	Play,
+	ClearScope,
+	VirtualScope,
+	Deprecated { version: StringConst, message: Option<StringConst> },
+	Version(StringConst),
+	Action(Option<Vec1<Identifier>>)
 }
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct DeclarationMetadata {
-	pub flags: FlagSet<DeclarationFlags>,
-	pub deprecated: Option<Deprecated>,
-	pub version: Option<StringSymbol>,
-	pub action: Option<Vec1<Identifier>>
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeclarationMetadataItem {
+	pub span: Span,
+	pub kind: DeclarationMetadataItemKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberDeclaration {
-	pub metadata: DeclarationMetadata,
+	pub span: Span,
+	pub metadata: Vec<DeclarationMetadataItem>,
 	pub member_type: TypeListOrVoid,
-	pub var_names: Vec1<Identifier>
+	pub vars: Vec1<(Identifier, Option<ExprList>)>
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -234,41 +285,57 @@ pub enum Declaration {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TypeListOrVoid {
-	TypeList(Vec<TypeOrArray>),
+pub enum TypeListOrVoidKind {
+	TypeList(Vec1<TypeOrArray>),
 	Void
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeListOrVoid {
+	pub span: Span,
+	pub kind: TypeListOrVoidKind
+}
 
-flags! {
-	pub enum ParamFlags: u32 {
-		In,
-		Out,
-		Optional
-	}
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParamFlagItemKind {
+	In,
+	Out,
+	Optional
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamFlagItem {
+	pub span: Span,
+	pub kind: ParamFlagItemKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncParam {
-	pub flags: FlagSet<ParamFlags>,
+	pub span: Span,
+	pub flags: Vec<ParamFlagItem>,
 	pub param_type: Type,
 	pub name: Identifier,
 	pub init: Option<Expression>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum FuncParams {
+pub enum FuncParamsKind {
 	Void,
 	List {
 		args: Vec<FuncParam>,
 		variadic: bool
 	}
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct FuncParams {
+	pub span: Span,
+	pub kind: FuncParamsKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDeclaration {
+	pub span: Span,
 	pub name: Identifier,
 	pub constant: bool,
-	pub metadata: DeclarationMetadata,
+	pub metadata: Vec<DeclarationMetadataItem>,
 	pub return_types: TypeListOrVoid,
 	pub params: FuncParams,
 	pub body: Option<CompoundStatement>
@@ -276,6 +343,7 @@ pub struct FunctionDeclaration {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticConstArray {
+	pub span: Span,
 	pub arr_type: Type,
 	pub name: Identifier,
 	pub exprs: ExprList
@@ -301,13 +369,18 @@ pub struct ArrayIndexExprs {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum FunctionCallArg {
+pub enum FunctionCallArgKind {
 	Unnamed(Expression),
 	Named(Identifier, Expression)
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionCallArg {
+	pub span: Span,
+	pub kind: FunctionCallArgKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
+pub enum ExpressionKind {
 	Ident(Identifier),
 	Const(Const),
 	Binary { op: BinaryOp, exprs: Box<BinaryOpExprs> },
@@ -319,6 +392,11 @@ pub enum Expression {
 	Vector2(Box<(Expression, Expression)>),
 	Vector3(Box<(Expression, Expression, Expression)>),
 	ClassCast(Identifier, Vec<FunctionCallArg>)
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Expression {
+	pub span: Span,
+	pub kind: ExpressionKind
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -404,10 +482,13 @@ pub enum CondIterType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExprList(pub Vec1<Expression>);
+pub struct ExprList {
+	pub span: Span,
+	pub list: Vec1<Expression>
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum VarInit {
+pub enum VarInitKind {
 	Single { name: Identifier, val: Option<Expression> },
 	Array {
 		name: Identifier,
@@ -415,24 +496,38 @@ pub enum VarInit {
 		vals: Option<ExprList>
 	}
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct VarInit {
+	pub span: Span,
+	pub kind: VarInitKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocalVariableDefinition {
+	pub span: Span,
 	pub var_type: Type,
 	pub inits: Vec1<VarInit>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ForInit {
+pub enum ForInitKind {
 	VarDef(LocalVariableDefinition),
 	ExprList(ExprList)
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForInit {
+	pub span: Span,
+	pub kind: ForInitKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompoundStatement(pub Vec<Statement>);
+pub struct CompoundStatement {
+	pub span: Span,
+	pub statements: Vec<Statement>
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
+pub enum StatementKind {
 	Labeled(LabeledStatement),
 	Compound(CompoundStatement),
 	Expression(Expression),
@@ -453,9 +548,14 @@ pub enum Statement {
 	StaticConstArray(StaticConstArray),
 	Empty
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct Statement {
+	pub span: Span,
+	pub kind: StatementKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum IntType {
+pub enum IntTypeKind {
 	SByte,
 	Byte,
 	Short,
@@ -463,22 +563,37 @@ pub enum IntType {
 	Int,
 	UInt
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct IntType {
+	pub span: Span,
+	pub kind: IntTypeKind
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+	pub span: Span,
+	pub name: Identifier,
+	pub init: Option<Expression>
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDefinition {
+	pub span: Span,
 	pub name: Identifier,
 	pub enum_type: Option<IntType>,
-	pub variants: Vec<(Identifier, Option<Expression>)>
+	pub variants: Vec<EnumVariant>
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDefinition {
+	pub span: Span,
 	pub name: Identifier,
 	pub expr: Expression
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlagDefinition {
+	pub span: Span,
 	pub flag_name: Identifier,
 	pub var_name: Identifier,
 	pub shift: IntConst
@@ -486,67 +601,89 @@ pub struct FlagDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyDefinition {
+	pub span: Span,
 	pub name: Identifier,
 	pub vars: Vec1<Identifier>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum DefaultStatement {
+pub enum DefaultStatementKind {
 	Property { prop: DottableId, vals: Option<ExprList> },
 	AddFlag(DottableId),
 	RemoveFlag(DottableId)
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct DefaultStatement {
+	pub span: Span,
+	pub kind: DefaultStatementKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DefaultDefinition(pub Vec<DefaultStatement>);
+pub struct DefaultDefinition {
+	pub span: Span,
+	pub statements: Vec<DefaultStatement>
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct NonWhitespace(pub NameSymbol);
+pub struct NonWhitespace {
+	pub span: Span,
+	pub symbol: NameSymbol
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum StateLineAction {
+pub enum StateLineActionKind {
 	Call {
 		func: Identifier,
 		args: Option<Vec<FunctionCallArg>>
 	},
 	Anonymous(CompoundStatement)
 }
-
-flags! {
-	pub enum StateLineFlags: u32 {
-		Bright,
-		Fast,
-		Slow,
-		NoDelay,
-		CanRaise
-	}
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateLineAction {
+	pub span: Span,
+	pub kind: StateLineActionKind
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct StateLineMetadata {
-	pub flags: FlagSet<StateLineFlags>,
-	pub offset: Option<(Expression, Expression)>,
-	pub light: Option<Vec1<StringSymbol>>
+#[derive(Debug, Clone, PartialEq)]
+pub enum StateLineMetadataItemKind {
+	Bright,
+	Fast,
+	Slow,
+	NoDelay,
+	CanRaise,
+	Offset(Expression, Expression),
+	Light(Vec1<StringConst>)
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateLineMetadataItem {
+	pub span: Span,
+	pub kind: StateLineMetadataItemKind
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateLine {
+	pub span: Span,
 	pub sprite: NonWhitespace,
 	pub frames: NonWhitespace,
 	pub duration: Expression,
-	pub metadata: StateLineMetadata,
+	pub metadata: Vec<StateLineMetadataItem>,
 	pub action: Option<StateLineAction>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum StateGotoTarget {
+pub enum StateGotoTargetKind {
 	Unscoped(DottableId),
 	Scoped(Identifier, DottableId),
 	Super(DottableId)
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateGotoTarget {
+	pub span: Span,
+	pub kind: StateGotoTargetKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum StatesBodyItem {
+pub enum StatesBodyItemKind {
 	Label(NonWhitespace),
 	Line(StateLine),
 	Stop,
@@ -558,9 +695,15 @@ pub enum StatesBodyItem {
 		offset: Option<Expression>
 	}
 }
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatesBodyItem {
+	pub span: Span,
+	pub kind: StatesBodyItemKind
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatesDefinition {
+	pub span: Span,
 	pub opts: Option<Vec1<Identifier>>,
 	pub body: Vec<StatesBodyItem>
 }
