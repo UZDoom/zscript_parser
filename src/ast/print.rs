@@ -272,7 +272,7 @@ impl<T: Tree> Tree for &T {
 
 impl Tree for TopLevel {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
-		builder.add_empty_child(format!("Version {:?}", self.version.as_ref().map(|x| format!("{}", x))));
+		builder.add_empty_child(format!("Version: {:?}", self.version.as_ref().map(|x| format!("{}", x))));
 		for d in self.definitions.iter() {
 			match &d.kind {
 				TopLevelDefinitionKind::Class(x)        => { x.tree(i, builder); }

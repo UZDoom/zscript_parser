@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use regex::Regex;
 use lazy_static::*;
 use vec1::{Vec1, vec1};
@@ -8,8 +10,12 @@ use super::ast::print::Tree;
 use super::tokenizer::*;
 use super::interner::*;
 
+use crate::err::ParsingError;
+use crate::err::FileSpans;
+
 #[derive(Debug)]
 pub struct Parser<'src> {
+	file: Arc<File>,
 	text: &'src str,
 	tokenizer: Tokenizer<'src>,
 	errs: Vec<ParsingError>,
@@ -18,18 +24,22 @@ pub struct Parser<'src> {
 }
 
 #[derive(Debug)]
-pub struct ParserResult {
+pub struct ParserResult<'src> {
+	pub file: Arc<File>,
+	pub text: &'src str,
 	pub ast: TopLevel,
 	pub errs: Vec<ParsingError>,
 	pub name_interner: NameInterner,
 	pub string_interner: StringInterner
 }
 
-impl std::fmt::Display for ParserResult {
+impl std::fmt::Display for ParserResult<'_> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		let mut newline = false;
 		if self.errs.len() > 0 {
-			write!(f, "ERRORS: TODO {:?}", self.errs)?;
+			for e in self.errs.iter() {
+				write!(f, "{}", e.repr())?;
+			}
 			newline = true;
 		}
 
@@ -237,10 +247,11 @@ enum Extend {
 }
 
 impl<'src> Parser<'src> {
-	pub fn new(input: &'src str) -> Self {
+	pub fn new(file: Arc<File>, input: &'src str) -> Self {
 		Self {
+			file: file.clone(),
 			text: input,
-			tokenizer: Tokenizer::new(input),
+			tokenizer: Tokenizer::new(file.clone(), input),
 			errs: vec![],
 			name_interner: NameInterner::default(),
 			string_interner: StringInterner::default(),
@@ -413,7 +424,13 @@ impl<'src> Parser<'src> {
 			};
 			Err(ParsingError {
 				msg: err_msg,
-				spans: vec1![span]
+				file_spans: vec![
+					FileSpans {
+						file: self.file.clone(),
+						main_spans: vec1![span],
+						info_spans: vec![]
+					}
+				]
 			})
 		}
 	}
@@ -436,7 +453,16 @@ impl<'src> Parser<'src> {
 
 				Ok(Some(VersionInfo::new(major, minor, revision)))
 			} else {
-				Err(ParsingError { msg: "invalid version directive".to_string(), spans: vec1![s.span] })
+				Err(ParsingError {
+					msg: "invalid version directive".to_string(),
+					file_spans: vec![
+						FileSpans {
+							file: self.file.clone(),
+							main_spans: vec1![s.span],
+							info_spans: vec![]
+						}
+					]
+				})
 			}
 		} else {
 			Ok(None)
@@ -1769,9 +1795,9 @@ impl<'src> Parser<'src> {
 		Ok(ret)
 	}
 
-	fn get_class_body(&mut self) -> Result<(Vec<ClassInner>, Span), ParsingError> {
+	fn get_class_body(&mut self, extend: bool) -> Result<(Vec<ClassInner>, Span), ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftCurly]);
-		let (_, s0) = self.expect(ex, "`{`")?;
+		let (_, s0) = self.expect(ex, if extend { "`{`" } else { "a class metadata item or `{`" })?;
 
 		let mut inners = vec![];
 
@@ -1781,7 +1807,7 @@ impl<'src> Parser<'src> {
 			}
 
 			let ex = self.get_class_inner()?;
-			let inner = self.expect(ex, "a class inner element")?;
+			let inner = self.expect(ex, "a class inner element or `}`")?;
 			inners.push(inner);
 		})
 	}
@@ -1798,7 +1824,7 @@ impl<'src> Parser<'src> {
 		let ancestor = self.get_class_ancestry()?;
 		let metadata = self.get_class_metadata()?;
 
-		let (inners, s1) = self.get_class_body()?;
+		let (inners, s1) = self.get_class_body(false)?;
 
 		Ok(Some(ClassDefinition {
 			span: s0.combine(s1),
@@ -1868,7 +1894,7 @@ impl<'src> Parser<'src> {
 			}
 
 			let ex = self.get_mixin_class_inner()?;
-			let inner = self.expect(ex, "a mixin class inner element")?;
+			let inner = self.expect(ex, "a mixin class inner element or `}`")?;
 			inners.push(inner);
 		})
 	}
@@ -1962,9 +1988,9 @@ impl<'src> Parser<'src> {
 		Ok(ret)
 	}
 
-	fn get_struct_body(&mut self) -> Result<(Vec<StructInner>, Span), ParsingError> {
+	fn get_struct_body(&mut self, extend: bool) -> Result<(Vec<StructInner>, Span), ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftCurly]);
-		let (_, s0) = self.expect(ex, "`{`")?;
+		let (_, s0) = self.expect(ex, if extend { "`{`" } else { "a struct metadata item or `{`" })?;
 
 		let mut inners = vec![];
 
@@ -1976,7 +2002,7 @@ impl<'src> Parser<'src> {
 			}
 
 			let ex = self.get_struct_inner()?;
-			let inner = self.expect(ex, "a class inner element")?;
+			let inner = self.expect(ex, "a struct inner element or `}`")?;
 			inners.push(inner);
 		})
 	}
@@ -1992,7 +2018,7 @@ impl<'src> Parser<'src> {
 
 		let metadata = self.get_struct_metadata()?;
 
-		let (inners, s1) = self.get_struct_body()?;
+		let (inners, s1) = self.get_struct_body(false)?;
 
 		Ok(Some(StructDefinition {
 			span: s0.combine(s1),
@@ -2016,7 +2042,7 @@ impl<'src> Parser<'src> {
 				let ex = self.get_ident();
 				let class_name = self.expect(ex, "an identifier")?;
 
-				let (inners, s1) = self.get_class_body()?;
+				let (inners, s1) = self.get_class_body(true)?;
 
 				Ok(Some(Extend::Class(ExtendClass {
 					span: s0.combine(s1),
@@ -2027,7 +2053,7 @@ impl<'src> Parser<'src> {
 				let ex = self.get_ident();
 				let struct_name = self.expect(ex, "an identifier")?;
 
-				let (inners, s1) = self.get_struct_body()?;
+				let (inners, s1) = self.get_struct_body(true)?;
 
 				Ok(Some(Extend::Struct(ExtendStruct {
 					span: s0.combine(s1),
@@ -2460,12 +2486,14 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	pub fn parse(mut self) -> ParserResult {
+	pub fn parse(mut self) -> ParserResult<'src> {
 		let version = match self.get_lump_version() {
 			Ok(v) => v,
 			Err(e) => {
 				self.err(e);
 				return ParserResult {
+					file: self.file,
+					text: self.text,
 					ast: TopLevel { version: None, definitions: vec![] },
 					errs: self.errs,
 					name_interner: self.name_interner,
@@ -2555,6 +2583,8 @@ impl<'src> Parser<'src> {
 		}
 
 		ParserResult {
+			file: self.file,
+			text: self.text,
 			ast: TopLevel {
 				version,
 				definitions
