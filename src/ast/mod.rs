@@ -24,7 +24,7 @@ pub struct TopLevelDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopLevel {
-	pub version: VersionInfo,
+	pub version: Option<VersionInfo>,
 	pub definitions: Vec<TopLevelDefinition>
 }
 

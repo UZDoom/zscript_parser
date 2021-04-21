@@ -272,7 +272,7 @@ impl<T: Tree> Tree for &T {
 
 impl Tree for TopLevel {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
-		builder.add_empty_child(format!("Version {}", self.version));
+		builder.add_empty_child(format!("Version {:?}", self.version.as_ref().map(|x| format!("{}", x))));
 		for d in self.definitions.iter() {
 			match &d.kind {
 				TopLevelDefinitionKind::Class(x)        => { x.tree(i, builder); }
@@ -500,6 +500,8 @@ impl Tree for StatesDefinition {
 				StatesBodyItemKind::Label(a) => { builder.add_empty_child(format!("Label: {}", a.repr(i))); }
 				StatesBodyItemKind::Line(s) => {
 					builder.begin_child(format!("State Line"));
+					builder.add_empty_child(format!("Sprite: {}", s.sprite.repr(i)));
+					builder.add_empty_child(format!("Frames: {}", s.frames.repr(i)));
 					builder.begin_child(format!("Metadata"));
 					for m in s.metadata.iter() {
 						match &m.kind {
@@ -839,7 +841,7 @@ impl Tree for Declaration {
 				builder.begin_child(format!("Names"));
 				for c in m.vars.iter() {
 					let v: Option<Vec<String>> = c.1.as_ref().map(|x| x.list.iter().map(|y| format!("[{}]", y.repr(i))).collect());
-					builder.add_empty_child(format!("{}{:?}", c.0.repr(i), v.map(|x| x.join(""))));
+					builder.add_empty_child(format!("{}{}", c.0.repr(i), v.map(|x| x.join("")).unwrap_or_else(|| "".to_string())));
 				}
 				m.metadata.tree(i, builder);
 				builder.end_child();

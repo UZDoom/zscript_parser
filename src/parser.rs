@@ -19,26 +19,29 @@ pub struct Parser<'src> {
 
 #[derive(Debug)]
 pub struct ParserResult {
-	ast: Option<TopLevel>,
-	errs: Vec<ParsingError>,
-	name_interner: NameInterner,
-	string_interner: StringInterner
+	pub ast: TopLevel,
+	pub errs: Vec<ParsingError>,
+	pub name_interner: NameInterner,
+	pub string_interner: StringInterner
 }
 
 impl std::fmt::Display for ParserResult {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		let mut newline = false;
 		if self.errs.len() > 0 {
-			todo!()
+			write!(f, "ERRORS: TODO {:?}", self.errs)?;
+			newline = true;
 		}
-		if let Some(a) = &self.ast {
-			let mut builder = ptree::TreeBuilder::new("AST".to_string());
-			a.tree(&(&self.name_interner, &self.string_interner), &mut builder);
-			let t = builder.build();
-			let mut cursor: std::io::Cursor<Vec<u8>> = std::io::Cursor::new(Vec::new());
-			ptree::write_tree(&t, &mut cursor).unwrap();
-			let data = cursor.into_inner();
-			write!(f, "{}", std::str::from_utf8(&data).unwrap())?;
-		}
+
+		if newline { write!(f, "\n")?; }
+		let mut builder = ptree::TreeBuilder::new("AST".to_string());
+		self.ast.tree(&(&self.name_interner, &self.string_interner), &mut builder);
+		let t = builder.build();
+		let mut cursor: std::io::Cursor<Vec<u8>> = std::io::Cursor::new(Vec::new());
+		ptree::write_tree(&t, &mut cursor).unwrap();
+		let data = cursor.into_inner();
+		write!(f, "{}", std::str::from_utf8(&data).unwrap())?;
+
 		Ok(())
 	}
 }
@@ -244,6 +247,10 @@ impl<'src> Parser<'src> {
 		}
 	}
 
+	fn err(&mut self, e: ParsingError) {
+		self.errs.push(e);
+	}
+
 	#[inline(always)]
 	fn get_keyword(&mut self, keywords: &[Keyword]) -> Option<(Keyword, Span)> {
 		if let Some(Token { data: TokenData::Keyword(k), .. }) = self.tokenizer.peek(&mut self.errs) {
@@ -396,18 +403,22 @@ impl<'src> Parser<'src> {
 			Ok(v)
 		} else {
 			let next = self.tokenizer.peek(&mut self.errs);
-			let err_msg = if let Some(n) = next {
-				format!("expected {}, got {}", msg, n.data)
-			} else {
-				format!("expected {}, got `EOF`", msg)
+			let err_msg = match next {
+				Some(n) => format!("expected {}, got {}", msg, n.data),
+				None => format!("expected {}, got `EOF`", msg),
+			};
+			let span = match next {
+			    Some(n) => n.span(self.text),
+			    None    => Span { start: self.text.len(), end: self.text.len() }
 			};
 			Err(ParsingError {
-				msg: err_msg
+				msg: err_msg,
+				spans: vec1![span]
 			})
 		}
 	}
 
-	fn get_lump_version(&mut self) -> Result<VersionInfo, ParsingError> {
+	fn get_lump_version(&mut self) -> Result<Option<VersionInfo>, ParsingError> {
 		if self.get_keyword(&[Keyword::Version][..]).is_some() {
 			let ex = self.get_string();
 			let s = self.expect(ex, "string literal")?;
@@ -423,12 +434,12 @@ impl<'src> Parser<'src> {
 				let minor = u16::from_str_radix(c.name("Minor").unwrap().as_str(), 10).unwrap_or(0);
 				let revision = u16::from_str_radix(c.name("Revision").map(|x| x.as_str()).unwrap_or("0"), 10).unwrap_or(0);
 
-				Ok(VersionInfo::new(major, minor, revision))
+				Ok(Some(VersionInfo::new(major, minor, revision)))
 			} else {
-				Err(ParsingError { msg: "invalid version directive".to_string() })
+				Err(ParsingError { msg: "invalid version directive".to_string(), spans: vec1![s.span] })
 			}
 		} else {
-			Ok(VersionInfo::new(2, 3, 0))
+			Ok(None)
 		}
 	}
 
@@ -2453,9 +2464,9 @@ impl<'src> Parser<'src> {
 		let version = match self.get_lump_version() {
 			Ok(v) => v,
 			Err(e) => {
-				self.errs.push(e);
+				self.err(e);
 				return ParserResult {
-					ast: None,
+					ast: TopLevel { version: None, definitions: vec![] },
 					errs: self.errs,
 					name_interner: self.name_interner,
 					string_interner: self.string_interner
@@ -2466,20 +2477,6 @@ impl<'src> Parser<'src> {
 		let mut definitions = vec![];
 
 		loop {
-			macro_rules! err_ret {
-				($e: expr) => {
-					{
-						self.errs.push($e);
-						ParserResult {
-							ast: None,
-							errs: self.errs,
-							name_interner: self.name_interner,
-							string_interner: self.string_interner
-						}
-					}
-				}
-			}
-
 			if self.tokenizer.peek(&mut self.errs).is_none() {
 				self.tokenizer.next(&mut self.errs);
 				break;
@@ -2491,7 +2488,7 @@ impl<'src> Parser<'src> {
 				let ex = self.get_string();
 				let path = match self.expect(ex, "a string constant") {
 					Ok(p) => p,
-					Err(e) => { return err_ret!(e); }
+					Err(e) => { self.err(e); break; }
 				};
 
 				definitions.push(TopLevelDefinition {
@@ -2506,7 +2503,7 @@ impl<'src> Parser<'src> {
 					continue;
 				}
 				Ok(None) => {}
-				Err(e) => { return err_ret!(e); }
+				Err(e) => { self.err(e); break; }
 			}
 			match self.get_mixin() {
 				Ok(Some(c)) => {
@@ -2514,7 +2511,7 @@ impl<'src> Parser<'src> {
 					continue;
 				}
 				Ok(None) => {}
-				Err(e) => { return err_ret!(e); }
+				Err(e) => { self.err(e); break; }
 			}
 			match self.get_struct() {
 				Ok(Some(s)) => {
@@ -2522,7 +2519,7 @@ impl<'src> Parser<'src> {
 					continue;
 				}
 				Ok(None) => {}
-				Err(e) => { return err_ret!(e); }
+				Err(e) => { self.err(e); break; }
 			}
 			match self.get_extend() {
 				Ok(Some(e)) => {
@@ -2533,7 +2530,7 @@ impl<'src> Parser<'src> {
 					continue;
 				}
 				Ok(None) => {}
-				Err(e) => { return err_ret!(e); }
+				Err(e) => { self.err(e); break; }
 			}
 			match self.get_enum() {
 				Ok(Some(e)) => {
@@ -2541,7 +2538,7 @@ impl<'src> Parser<'src> {
 					continue;
 				}
 				Ok(None) => {}
-				Err(e) => { return err_ret!(e); }
+				Err(e) => { self.err(e); break; }
 			}
 			match self.get_const_def() {
 				Ok(Some(c)) => {
@@ -2549,24 +2546,19 @@ impl<'src> Parser<'src> {
 					continue;
 				}
 				Ok(None) => {}
-				Err(e) => { return err_ret!(e); }
+				Err(e) => { self.err(e); break; }
 			}
 
 			let e = self.expect::<()>(None, "a top level element").unwrap_err();
-			self.errs.push(e);
-			return ParserResult {
-				ast: None,
-				errs: self.errs,
-				name_interner: self.name_interner,
-				string_interner: self.string_interner
-			};
+			self.err(e);
+			break;
 		}
 
 		ParserResult {
-			ast: Some(TopLevel {
+			ast: TopLevel {
 				version,
 				definitions
-			}),
+			},
 			errs: self.errs,
 			name_interner: self.name_interner,
 			string_interner: self.string_interner

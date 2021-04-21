@@ -22,5 +22,6 @@ impl Span {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsingError {
-	msg: String
+	msg: String,
+	spans: vec1::Vec1<Span>
 }

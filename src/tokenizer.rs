@@ -6,25 +6,26 @@ use super::{ParsingError, Span};
 
 macro_rules! define_token_rule {
 	($reg: expr => $s: ident, $c: ident, $action: expr) => {
-		|input| {
+		|text, remaining| {
 			lazy_static! {
 				static ref RE: Regex = Regex::new(concat!("^(", $reg, ")")).unwrap();
 			}
-			let $c = RE.captures(input)?;
+			let $c = RE.captures(remaining)?;
 			let $s = $c.get(0).unwrap().as_str();
 			let a: Result<TokenData, String> = $action;
 			let ret = match a {
 				Ok(data) => Ok(Token {
-					original: &input[..$c.get(0).unwrap().end()],
+					original: &remaining[..$c.get(0).unwrap().end()],
 					data
 				}),
 				Err(msg) => Err(ParsingError {
-					msg: String::from(msg)
+					msg: String::from(msg),
+					spans: vec1::vec1![span(text, remaining)]
 				})
 			};
 			Some((
 				ret,
-				&input[$c.get(0).unwrap().end()..]
+				&remaining[$c.get(0).unwrap().end()..]
 			))
 		}
 	}
@@ -32,17 +33,17 @@ macro_rules! define_token_rule {
 
 macro_rules! define_token_rule_func {
 	($rule: ident: $reg: literal => $s: ident, $c: ident, $action: expr) => {
-		fn $rule<'src>(input: &'src str) -> Option<(Result<Token, ParsingError>, &'src str)> {
-			define_token_rule!($reg => $s, $c, $action)(input)
+		fn $rule<'src>(text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
+			define_token_rule!($reg => $s, $c, $action)(text, remaining)
 		}
 	};
 }
 
 macro_rules! first_of {
 	($rules: expr) => {
-		|s| {
+		|text, remaining| {
 			for r in $rules {
-				if let Some(t) = r(s) {
+				if let Some(t) = r(text, remaining) {
 					return Some(t);
 				}
 			}
@@ -73,10 +74,10 @@ macro_rules! rule_grouping_type {
 		}
 
 		#[allow(unused)]
-		fn $reg_func<'src>(input: &'src str) -> Option<(Result<Token, ParsingError>, &'src str)> {
+		fn $reg_func<'src>(text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
 			first_of!(&[
 				$(
-					|input| {
+					|text, remaining| {
 						lazy_static! {
 							static ref RE: Regex = {
 								let mut rule = "^(".to_string();
@@ -85,11 +86,11 @@ macro_rules! rule_grouping_type {
 								Regex::new(&rule).unwrap()
 							};
 						}
-						let m = RE.find(input)?;
+						let m = RE.find(remaining)?;
 						let data = TokenData::$name($name::$res);
 
-						let original = &input[..m.end()];
-						let new = &input[m.end()..];
+						let original = &remaining[..m.end()];
+						let new = &remaining[m.end()..];
 
 						Some((
 							Ok(Token {
@@ -99,12 +100,12 @@ macro_rules! rule_grouping_type {
 						))
 					},
 				)*
-			])(input)
+			])(text, remaining)
 		}
 
 		#[allow(unused)]
-		fn $match_func<'src>(input: &'src str) -> Option<$name> {
-			match &*input.to_lowercase() {
+		fn $match_func<'src>(remaining: &'src str) -> Option<$name> {
+			match &*remaining.to_lowercase() {
 				$(
 					$rule => Some($name::$res),
 				)*
@@ -120,13 +121,17 @@ pub struct Token<'src> {
 	pub data: TokenData<'src>
 }
 
+fn span(text: &str, original: &str) -> Span {
+	let text_ptr = text.as_ptr() as usize;
+	let self_ptr = original.as_ptr() as usize;
+	let start = self_ptr - text_ptr;
+	let end = start + original.len();
+	Span { start, end }
+}
+
 impl<'src> Token<'src> {
 	pub fn span(&self, text: &'src str) -> Span {
-		let text_ptr = text.as_ptr() as usize;
-		let self_ptr = self.original.as_ptr() as usize;
-		let start = self_ptr - text_ptr;
-		let end = start + self.original.len();
-		Span { start, end }
+		span(text, &self.original)
 	}
 }
 
@@ -222,12 +227,12 @@ rule_grouping_type!(Punctuation, punc, match_punc {
 	r"@"    => AtSign
 });
 
-fn states_punc<'src>(input: &'src str) -> Option<(Result<Token, ParsingError>, &'src str)> {
+fn states_punc<'src>(text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
 	first_of!(&[
 		define_token_rule!(r":"  => _s, c, Ok(TokenData::Punctuation(Punctuation::Colon))),
 		define_token_rule!(r";"  => _s, c, Ok(TokenData::Punctuation(Punctuation::Semicolon))),
 		define_token_rule!(r"\}" => _s, c, Ok(TokenData::Punctuation(Punctuation::RightCurly))),
-	])(input)
+	])(text, remaining)
 }
 
 rule_grouping_type!(Keyword, keyword, match_keyword {
@@ -396,13 +401,13 @@ define_token_rule_func!(
 );
 
 
-fn skip_whitespace<'src>(input: &'src str) -> &'src str {
+fn skip_whitespace<'src>(remaining: &'src str) -> &'src str {
 	lazy_static! {
 		static ref RE: Regex = Regex::new(
 			r"^((#region.*\n)|(#endregion.*\n)|([\u0000- ]+)|(//.*\n)|(?s:/\*.*\*/))"
 		).unwrap();
 	}
-	let mut cur = input;
+	let mut cur = remaining;
 	while let Some(s) = RE.shortest_match(cur) {
 		cur = &cur[s..]
 	}
@@ -411,6 +416,7 @@ fn skip_whitespace<'src>(input: &'src str) -> &'src str {
 
 #[derive(Debug)]
 pub struct Tokenizer<'src> {
+	text: &'src str,
 	remaining: &'src str,
 	states_mode: bool,
 	peeked: Option<Option<Token<'src>>>
@@ -418,7 +424,7 @@ pub struct Tokenizer<'src> {
 
 impl<'src> Tokenizer<'src> {
 	pub fn new(text: &'src str) -> Self {
-		Self { remaining: text, states_mode: false, peeked: None }
+		Self { text, remaining: text, states_mode: false, peeked: None }
 	}
 
 	pub fn set_states_mode(&mut self, mode: bool) {
@@ -435,7 +441,7 @@ impl<'src> Tokenizer<'src> {
 				&[
 					string, states_punc, nws
 				]
-			)(self.remaining);
+			)(self.text, self.remaining);
 			if let Some((token, new_remaining)) = result {
 				self.remaining = new_remaining;
 				Some(
@@ -453,7 +459,7 @@ impl<'src> Tokenizer<'src> {
 		} else {
 			let result = first_of!(
 				&[include, ident_or_keyword, name, string, float, int, punc]
-			)(self.remaining);
+			)(self.text, self.remaining);
 			if let Some((token, new_remaining)) = result {
 				self.remaining = new_remaining;
 				Some(token)
@@ -497,7 +503,7 @@ mod test {
 	#[test]
 	fn test_ident() {
 		let s = r"_something5 hi";
-		let (tok, rest) = ident_or_keyword(s).unwrap();
+		let (tok, rest) = ident_or_keyword(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -511,7 +517,7 @@ mod test {
 	#[test]
 	fn test_name() {
 		let s = r"'Hello \n hi me!' crazy";
-		let (tok, rest) = name(s).unwrap();
+		let (tok, rest) = name(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -522,7 +528,7 @@ mod test {
 		assert_eq!(rest, " crazy");
 
 		let s = r"'Hello \n hi' me!' crazy";
-		let (tok, rest) = name(s).unwrap();
+		let (tok, rest) = name(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -533,11 +539,12 @@ mod test {
 		assert_eq!(rest, " me!' crazy");
 
 		let s = "'Hello \\n hi me!\n crazy";
-		let (tok, rest) = name(s).unwrap();
+		let (tok, rest) = name(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap_err(),
 			ParsingError {
-				msg: "unterminated name literal".to_string()
+				msg: "unterminated name literal".to_string(),
+				spans: vec1::vec1![Span { start: 0, end: s.len() }]
 			}
 		);
 		assert_eq!(rest, "\n crazy");
@@ -546,7 +553,7 @@ mod test {
 	#[test]
 	fn test_string() {
 		let s = r#""Hello \" ' hi me!" crazy"#;
-		let (tok, rest) = string(s).unwrap();
+		let (tok, rest) = string(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -557,7 +564,7 @@ mod test {
 		assert_eq!(rest, " crazy");
 
 		let s = concat!(r#""Hello \" "#, "\n", r#"' hi me!" crazy"#);
-		let (tok, rest) = string(s).unwrap();
+		let (tok, rest) = string(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -568,11 +575,12 @@ mod test {
 		assert_eq!(rest, " crazy");
 
 		let s = r#""Hello \" ' hi me! crazy"#;
-		let (tok, rest) = string(s).unwrap();
+		let (tok, rest) = string(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap_err(),
 			ParsingError {
-				msg: "unterminated string literal".to_string()
+				msg: "unterminated string literal".to_string(),
+				spans: vec1::vec1![Span { start: 0, end: s.len() }]
 			}
 		);
 		assert_eq!(rest, "");
@@ -581,7 +589,7 @@ mod test {
 	#[test]
 	fn test_int() {
 		let s = r#"0x45A2u some other stuff"#;
-		let (tok, rest) = int(s).unwrap();
+		let (tok, rest) = int(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -595,7 +603,7 @@ mod test {
 	#[test]
 	fn test_float() {
 		let s = r#".245e-42f some other stuff"#;
-		let (tok, rest) = float(s).unwrap();
+		let (tok, rest) = float(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -609,7 +617,7 @@ mod test {
 	#[test]
 	fn test_nws() {
 		let s = r#"Test#24[/]#£2" other things"#;
-		let (tok, rest) = nws(s).unwrap();
+		let (tok, rest) = nws(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -623,7 +631,7 @@ mod test {
 	#[test]
 	fn test_punc() {
 		let s = r#">>= hi"#;
-		let (tok, rest) = punc(s).unwrap();
+		let (tok, rest) = punc(s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {

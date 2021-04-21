@@ -5,9 +5,8 @@ pub struct Symbol<const CASE_SENSITIVE: bool>(usize);
 
 #[derive(Debug, Clone, Default)]
 pub struct Interner<const CASE_SENSITIVE: bool> {
-	symbol_map: HashMap<String, Symbol<CASE_SENSITIVE>>,
-	string_map: Vec<String>,
-	cur_index: usize
+	symbol_map: HashMap<Box<str>, Symbol<CASE_SENSITIVE>>,
+	string_map: Vec<Box<str>>,
 }
 
 impl<const CASE_SENSITIVE: bool> std::fmt::Display for Interner<CASE_SENSITIVE> {
@@ -28,19 +27,18 @@ impl<const CASE_SENSITIVE: bool> Interner<CASE_SENSITIVE> {
 				return *s;
 			}
 		} else {
-			if let Some(s) = self.symbol_map.get(&string.to_lowercase()) {
+			if let Some(s) = self.symbol_map.get(&*string.to_lowercase()) {
 				return *s;
 			}
 		}
 
-		let new_sym = Symbol(self.cur_index);
-		self.cur_index += 1;
+		let new_sym = Symbol(self.string_map.len());
 		if CASE_SENSITIVE {
-			self.symbol_map.insert(string.to_string(), new_sym);
+			self.symbol_map.insert(string.to_string().into_boxed_str(), new_sym);
 		} else {
-			self.symbol_map.insert(string.to_lowercase(), new_sym);
+			self.symbol_map.insert(string.to_lowercase().into_boxed_str(), new_sym);
 		}
-		self.string_map.push(string.to_string());
+		self.string_map.push(string.to_string().into_boxed_str());
 
 		new_sym
 	}
