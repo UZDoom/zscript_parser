@@ -697,24 +697,30 @@ impl<'src> Parser<'src> {
 		} else {
 			let mut exprs = vec![];
 			loop {
-				let ex = self.get_expr()?;
-				let expr = self.expect(ex, "an identifier or expression")?;
+				let mut seen = false;
+				if let Some(Token { data: TokenData::Identifier { .. }, .. })
+					= self.tokenizer.peek(&mut self.errs) {
+					if let Some(Token { data: TokenData::Punctuation(Punctuation::Colon), .. })
+						= self.tokenizer.peek_twice(&mut self.errs) {
 
-				if let Expression { span, kind: ExpressionKind::Ident(id) } = &expr {
-					if self.get_punc(&[Punctuation::Colon]).is_some() {
+						let id = self.get_ident().expect("should get an ident at this point");
+						self.get_punc(&[Punctuation::Colon]).expect("should get a `:` at this point");
+
 						let ex = self.get_expr()?;
 						let expr = self.expect(ex, "an expression")?;
+
 						exprs.push(FunctionCallArg {
-							span: span.combine(expr.span),
-							kind: FunctionCallArgKind::Named(*id, expr)
+							span: id.span.combine(expr.span),
+							kind: FunctionCallArgKind::Named(id, expr)
 						});
-					} else {
-						exprs.push(FunctionCallArg {
-							span: *span,
-							kind: FunctionCallArgKind::Unnamed(expr)
-						});
+
+						seen = true;
 					}
-				} else {
+				}
+				if !seen {
+					let ex = self.get_expr()?;
+					let expr = self.expect(ex, "an identifier or expression")?;
+
 					exprs.push(FunctionCallArg {
 						span: expr.span,
 						kind: FunctionCallArgKind::Unnamed(expr)
@@ -778,36 +784,20 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_variable_declaration(&mut self) -> Result<Option<Statement>, ParsingError> {
+	fn get_variable_declaration(&mut self) -> Result<Option<LocalVariableDefinition>, ParsingError> {
+		if let Some(Token { data: TokenData::Identifier { .. }, .. }) = self.tokenizer.peek(&mut self.errs) {
+			if !matches!(self.tokenizer.peek_twice(&mut self.errs), Some(Token { data: TokenData::Identifier { .. }, .. })) {
+				return Ok(None);
+			}
+		}
+
 		let var_type = if let Some(var_type) = self.get_single_type()? { var_type } else { return Ok(None); };
 
 		let mut ret: Option<Vec1<VarInit>> = None;
 
 		loop {
 			let ex = self.get_ident();
-			if ex.is_none() {
-				if ret.is_some() {
-					return Err(self.expect(ex, "an identifier").unwrap_err());
-				}
-				return match var_type.kind {
-					TypeKind::SingleUserType(id) => {
-						let lhs = Expression {
-							span: var_type.span,
-							kind: ExpressionKind::Ident(id)
-						};
-						let expr = self.get_expr_inner(lhs, 0)?;
-
-						Ok(Some(Statement {
-							span: expr.span,
-							kind: StatementKind::Expression(expr)
-						}))
-					}
-					_ => {
-						Err(self.expect(ex, "an identifier").unwrap_err())
-					}
-				};
-			}
-			let name = ex.unwrap();
+			let name = self.expect(ex, "an identifier")?;
 			let mut s1 = name.span;
 
 			let sizes = self.get_array_sizes()?;
@@ -889,12 +879,8 @@ impl<'src> Parser<'src> {
 		let inits = ret.unwrap();
 
 		let span = var_type.span.combine(inits[inits.len() - 1].span);
-		let kind = StatementKind::LocalVariableDefinition(LocalVariableDefinition {
+		Ok(Some(LocalVariableDefinition {
 			span, var_type, inits
-		});
-
-		Ok(Some(Statement {
-			span, kind
 		}))
 	}
 
@@ -1012,31 +998,10 @@ impl<'src> Parser<'src> {
 
 	fn get_for_init(&mut self) -> Result<Option<ForInit>, ParsingError> {
 		if let Some(var_def) = self.get_variable_declaration()? {
-			match var_def.kind {
-				StatementKind::LocalVariableDefinition(var_dec) => {
-					Ok(Some(ForInit {
-						span: var_dec.span,
-						kind: ForInitKind::VarDef(var_dec)
-					}))
-				}
-				StatementKind::Expression(expr) => {
-					let mut ret = vec1![expr];
-					if self.get_punc(&[Punctuation::Comma]).is_some() {
-						let ex = self.get_expr_list()?;
-						let list = self.expect(ex, "an expression")?;
-						ret.append(&mut list.list.into_vec());
-					}
-					let span = ret[0].span.combine(ret[ret.len() - 1].span);
-					Ok(Some(ForInit {
-						span,
-						kind: ForInitKind::ExprList(ExprList {
-							span,
-							list: ret
-						})
-					}))
-				}
-				_ => unreachable!()
-			}
+			Ok(Some(ForInit {
+				span: var_def.span,
+				kind: ForInitKind::VarDef(var_def)
+			}))
 		} else if let Some(expr_list) = self.get_expr_list()? {
 			Ok(Some(ForInit {
 				span: expr_list.span,
@@ -1114,23 +1079,24 @@ impl<'src> Parser<'src> {
 
 	fn get_statement(&mut self) -> Result<Option<Statement>, ParsingError> {
 		if let Some(c) = self.get_compound_statement()? {
-			Ok(Some(Statement {
+			return Ok(Some(Statement {
 				span: c.span,
 				kind: StatementKind::Compound(c)
-			}))
+			}));
 		}
-		else if let Some(stmt) = self.get_variable_declaration()? {
+		if let Some(stmt) = self.get_variable_declaration()? {
 			let ex = self.get_punc(&[Punctuation::Semicolon]);
 			self.expect(ex, "`;`")?;
 
-			Ok(Some(stmt))
-		} else if let Some((k, s0)) = self.get_keyword(&[
+			return Ok(Some(Statement { span: stmt.span, kind: StatementKind::LocalVariableDefinition(stmt) }));
+		}
+		if let Some((k, s0)) = self.get_keyword(&[
 			Keyword::If, Keyword::Switch, Keyword::For, Keyword::While,
 			Keyword::Until, Keyword::Do, Keyword::Case, Keyword::Default,
 			Keyword::Static, Keyword::Continue, Keyword::Break,
 			Keyword::Return
 		]) {
-			match k {
+			return match k {
 				Keyword::If => {
 					self.get_if_body(s0)
 				}
@@ -1206,16 +1172,18 @@ impl<'src> Parser<'src> {
 					}))
 				}
 				_ => unreachable!()
-			}
-		} else if let Some(expr) = self.get_expr()? {
+			};
+		}
+		if let Some(expr) = self.get_expr()? {
 			let ex = self.get_punc(&[Punctuation::Semicolon]);
 			self.expect(ex, "`;`")?;
 
-			Ok(Some(Statement {
+			return Ok(Some(Statement {
 				span: expr.span,
 				kind: StatementKind::Expression(expr)
-			}))
-		} else if let Some((_, s0)) = self.get_punc(&[Punctuation::LeftSquare]) {
+			}));
+		}
+		if let Some((_, s0)) = self.get_punc(&[Punctuation::LeftSquare]) {
 			let ex = self.get_expr_list()?;
 			let assignees = self.expect(ex, "an expression")?;
 
@@ -1231,21 +1199,20 @@ impl<'src> Parser<'src> {
 			let ex = self.get_punc(&[Punctuation::Semicolon]);
 			let (_, s1) = self.expect(ex, "`;`")?;
 
-			Ok(Some(Statement {
+			return Ok(Some(Statement {
 				span: s0.combine(s1),
 				kind: StatementKind::MultiAssign {
 					assignees, rhs
 				}
-			}))
-
-		} else if let Some((_, s)) = self.get_punc(&[Punctuation::Semicolon]) {
-			Ok(Some(Statement {
+			}));
+		}
+		if let Some((_, s)) = self.get_punc(&[Punctuation::Semicolon]) {
+			return Ok(Some(Statement {
 				span: s,
 				kind: StatementKind::Empty
-			}))
-		} else {
-			Ok(None)
+			}));
 		}
+		Ok(None)
 	}
 
 	fn get_single_type(&mut self) -> Result<Option<Type>, ParsingError> {
@@ -1696,57 +1663,50 @@ impl<'src> Parser<'src> {
 
 	fn get_class_inner(&mut self) -> Result<Option<ClassInner>, ParsingError> {
 		if let Some(e) = self.get_enum()? {
-			Ok(Some(ClassInner { span: e.span, kind: ClassInnerKind::Enum(e) }))
-		} else if let Some(s) = self.get_struct()? {
-			Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::Struct(s) }))
-		} else if let Some(c) = self.get_const_def()? {
-			Ok(Some(ClassInner { span: c.span, kind: ClassInnerKind::Const(c) }))
-		} else if let Some(f) = self.get_flag_def()? {
-			Ok(Some(ClassInner { span: f.span, kind: ClassInnerKind::Flag(f) }))
-		} else if let Some(p) = self.get_property_def()? {
-			Ok(Some(ClassInner { span: p.span, kind: ClassInnerKind::Property(p) }))
-		} else if let Some(d) = self.get_default_def()? {
-			Ok(Some(ClassInner { span: d.span, kind: ClassInnerKind::Default(d) }))
-		} else if let Some(s) = self.get_states_def()? {
-			Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::States(s) }))
-		} else if let Some((_, s0)) = self.get_keyword(&[Keyword::Mixin]) {
+			return Ok(Some(ClassInner { span: e.span, kind: ClassInnerKind::Enum(e) }));
+		}
+		if let Some(s) = self.get_struct()? {
+			return Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::Struct(s) }));
+		}
+		if let Some(c) = self.get_const_def()? {
+			return Ok(Some(ClassInner { span: c.span, kind: ClassInnerKind::Const(c) }));
+		}
+		if let Some(f) = self.get_flag_def()? {
+			return Ok(Some(ClassInner { span: f.span, kind: ClassInnerKind::Flag(f) }));
+		}
+		if let Some(p) = self.get_property_def()? {
+			return Ok(Some(ClassInner { span: p.span, kind: ClassInnerKind::Property(p) }));
+		}
+		if let Some(d) = self.get_default_def()? {
+			return Ok(Some(ClassInner { span: d.span, kind: ClassInnerKind::Default(d) }));
+		}
+		if let Some(s) = self.get_states_def()? {
+			return Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::States(s) }));
+		}
+		if let Some((_, s0)) = self.get_keyword(&[Keyword::Mixin]) {
 			let ex = self.get_ident();
 			let i = self.expect(ex, "an identifier")?;
 
 			let ex = self.get_punc(&[Punctuation::Semicolon]);
 			let (_, s1) = self.expect(ex, "`;` or `,`")?;
 
-			Ok(Some(ClassInner { span: s0.combine(s1), kind: ClassInnerKind::Mixin(i) }))
-		} else if let Some((_, s0)) = self.get_keyword(&[Keyword::Static]) {
-			let ex = self.get_static_const_body(s0)?;
-			if let Some(s) = ex {
-				Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::StaticConstArray(s) }))
-			} else {
-				let ex = self.get_declaration()?;
-				let mut ret = self.expect(ex, "a declaration flag or a type")?;
-				let span = match &mut ret {
-					Declaration::Member(r)   => {
-						r.metadata.insert(0, DeclarationMetadataItem { span: s0, kind: DeclarationMetadataItemKind::Static });
-						r.span = s0.combine(r.span);
-						r.span
-					}
-					Declaration::Function(r) => {
-						r.metadata.insert(0, DeclarationMetadataItem { span: s0, kind: DeclarationMetadataItemKind::Static });
-						r.span = s0.combine(r.span);
-						r.span
-					}
-				};
-				Ok(Some(ClassInner { span, kind: ClassInnerKind::Declaration(ret) }))
+			return Ok(Some(ClassInner { span: s0.combine(s1), kind: ClassInnerKind::Mixin(i) }));
+		}
+		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek(&mut self.errs) {
+			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice(&mut self.errs) {
+				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(self.text);
+				let s = self.get_static_const_body(s0)?.unwrap();
+				return Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::StaticConstArray(s) }));
 			}
-		} else if let Some(d) = self.get_declaration()? {
+		}
+		if let Some(d) = self.get_declaration()? {
 			let span = match &d {
 				Declaration::Member(r)   => r.span,
 				Declaration::Function(r) => r.span
 			};
-			Ok(Some(ClassInner { span, kind: ClassInnerKind::Declaration(d) }))
-		} else {
-			Ok(None)
+			return Ok(Some(ClassInner { span, kind: ClassInnerKind::Declaration(d) }));
 		}
+		Ok(None)
 	}
 
 	fn get_class_ancestry(&mut self) -> Result<Option<DottableId>, ParsingError> {
@@ -1837,49 +1797,41 @@ impl<'src> Parser<'src> {
 
 	fn get_mixin_class_inner(&mut self) -> Result<Option<MixinClassInner>, ParsingError> {
 		if let Some(e) = self.get_enum()? {
-			Ok(Some(MixinClassInner { span: e.span, kind: MixinClassInnerKind::Enum(e) }))
-		} else if let Some(s) = self.get_struct()? {
-			Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::Struct(s) }))
-		} else if let Some(c) = self.get_const_def()? {
-			Ok(Some(MixinClassInner { span: c.span, kind: MixinClassInnerKind::Const(c) }))
-		} else if let Some(f) = self.get_flag_def()? {
-			Ok(Some(MixinClassInner { span: f.span, kind: MixinClassInnerKind::Flag(f) }))
-		} else if let Some(p) = self.get_property_def()? {
-			Ok(Some(MixinClassInner { span: p.span, kind: MixinClassInnerKind::Property(p) }))
-		} else if let Some(d) = self.get_default_def()? {
-			Ok(Some(MixinClassInner { span: d.span, kind: MixinClassInnerKind::Default(d) }))
-		} else if let Some(s) = self.get_states_def()? {
-			Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::States(s) }))
-		} else if let Some((_, s0)) = self.get_keyword(&[Keyword::Static]) {
-			let ex = self.get_static_const_body(s0)?;
-			if let Some(s) = ex {
-				Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::StaticConstArray(s) }))
-			} else {
-				let ex = self.get_declaration()?;
-				let mut ret = self.expect(ex, "a declaration flag or a type")?;
-				let span = match &mut ret {
-					Declaration::Member(r)   => {
-						r.metadata.insert(0, DeclarationMetadataItem { span: s0, kind: DeclarationMetadataItemKind::Static });
-						r.span = s0.combine(r.span);
-						r.span
-					}
-					Declaration::Function(r) => {
-						r.metadata.insert(0, DeclarationMetadataItem { span: s0, kind: DeclarationMetadataItemKind::Static });
-						r.span = s0.combine(r.span);
-						r.span
-					}
-				};
-				Ok(Some(MixinClassInner { span, kind: MixinClassInnerKind::Declaration(ret) }))
+			return Ok(Some(MixinClassInner { span: e.span, kind: MixinClassInnerKind::Enum(e) }));
+		}
+		if let Some(s) = self.get_struct()? {
+			return Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::Struct(s) }));
+		}
+		if let Some(c) = self.get_const_def()? {
+			return Ok(Some(MixinClassInner { span: c.span, kind: MixinClassInnerKind::Const(c) }));
+		}
+		if let Some(f) = self.get_flag_def()? {
+			return Ok(Some(MixinClassInner { span: f.span, kind: MixinClassInnerKind::Flag(f) }));
+		}
+		if let Some(p) = self.get_property_def()? {
+			return Ok(Some(MixinClassInner { span: p.span, kind: MixinClassInnerKind::Property(p) }));
+		}
+		if let Some(d) = self.get_default_def()? {
+			return Ok(Some(MixinClassInner { span: d.span, kind: MixinClassInnerKind::Default(d) }));
+		}
+		if let Some(s) = self.get_states_def()? {
+			return Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::States(s) }));
+		}
+		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek(&mut self.errs) {
+			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice(&mut self.errs) {
+				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(self.text);
+				let s = self.get_static_const_body(s0)?.unwrap();
+				return Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::StaticConstArray(s) }));
 			}
-		} else if let Some(d) = self.get_declaration()? {
+		}
+		if let Some(d) = self.get_declaration()? {
 			let span = match &d {
 				Declaration::Member(r)   => r.span,
 				Declaration::Function(r) => r.span
 			};
-			Ok(Some(MixinClassInner { span, kind: MixinClassInnerKind::Declaration(d) }))
-		} else {
-			Ok(None)
+			return Ok(Some(MixinClassInner { span, kind: MixinClassInnerKind::Declaration(d) }));
 		}
+		Ok(None)
 	}
 
 	fn get_mixin_class_body(&mut self) -> Result<(Vec<MixinClassInner>, Span), ParsingError> {
@@ -1922,39 +1874,26 @@ impl<'src> Parser<'src> {
 
 	fn get_struct_inner(&mut self) -> Result<Option<StructInner>, ParsingError> {
 		if let Some(e) = self.get_enum()? {
-			Ok(Some(StructInner { span: e.span, kind: StructInnerKind::Enum(e) }))
-		} else if let Some(c) = self.get_const_def()? {
-			Ok(Some(StructInner { span: c.span, kind: StructInnerKind::Const(c) }))
-		} else if let Some((_, s0)) = self.get_keyword(&[Keyword::Static]) {
-			let ex = self.get_static_const_body(s0)?;
-			if let Some(s) = ex {
-				Ok(Some(StructInner { span: s.span, kind: StructInnerKind::StaticConstArray(s) }))
-			} else {
-				let ex = self.get_declaration()?;
-				let mut ret = self.expect(ex, "a declaration flag or a type")?;
-				let span = match &mut ret {
-					Declaration::Member(r)   => {
-						r.metadata.insert(0, DeclarationMetadataItem { span: s0, kind: DeclarationMetadataItemKind::Static });
-						r.span = s0.combine(r.span);
-						r.span
-					}
-					Declaration::Function(r) => {
-						r.metadata.insert(0, DeclarationMetadataItem { span: s0, kind: DeclarationMetadataItemKind::Static });
-						r.span = s0.combine(r.span);
-						r.span
-					}
-				};
-				Ok(Some(StructInner { span, kind: StructInnerKind::Declaration(ret) }))
+			return Ok(Some(StructInner { span: e.span, kind: StructInnerKind::Enum(e) }));
+		}
+		if let Some(c) = self.get_const_def()? {
+			return Ok(Some(StructInner { span: c.span, kind: StructInnerKind::Const(c) }));
+		}
+		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek(&mut self.errs) {
+			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice(&mut self.errs) {
+				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(self.text);
+				let s = self.get_static_const_body(s0)?.unwrap();
+				return Ok(Some(StructInner { span: s.span, kind: StructInnerKind::StaticConstArray(s) }));
 			}
-		} else if let Some(d) = self.get_declaration()? {
+		}
+		if let Some(d) = self.get_declaration()? {
 			let span = match &d {
 				Declaration::Member(r)   => r.span,
 				Declaration::Function(r) => r.span
 			};
-			Ok(Some(StructInner { span, kind: StructInnerKind::Declaration(d) }))
-		} else {
-			Ok(None)
+			return Ok(Some(StructInner { span, kind: StructInnerKind::Declaration(d) }));
 		}
+		Ok(None)
 	}
 
 	fn get_struct_metadata(&mut self) -> Result<Vec<StructMetadataItem>, ParsingError> {

@@ -510,6 +510,21 @@ impl<'src> Tokenizer<'src> {
 			None => unreachable!()
 		}
 	}
+
+	pub fn peek_twice(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
+		if self.peeked1.is_none() { panic!("peek_twice requested when nothing has been peeked once"); }
+
+		if let None = self.peeked2 {
+			let unpeek = self.next(errs);
+			self.peeked2 = Some(self.next(errs));
+			self.peeked1 = Some(unpeek);
+		}
+
+		match self.peeked2.as_ref() {
+			Some(p) => &p,
+			None => unreachable!()
+		}
+	}
 }
 
 #[cfg(test)]
