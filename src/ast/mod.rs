@@ -391,7 +391,8 @@ pub enum ExpressionKind {
 	FunctionCall { lhs: Box<Expression>, exprs: Vec<FunctionCallArg> },
 	Vector2(Box<(Expression, Expression)>),
 	Vector3(Box<(Expression, Expression, Expression)>),
-	ClassCast(Identifier, Vec<FunctionCallArg>)
+	ClassCast(Identifier, Vec<FunctionCallArg>),
+	Super
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expression {

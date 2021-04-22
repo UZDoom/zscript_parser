@@ -49,7 +49,7 @@ impl<T: Repr> Repr for &T {
 
 impl Repr for StringConst {
 	fn repr(&self, (_, s): &Interners) -> String {
-		format!("\"{}\"", s.string(self.symbol))
+		format!("{:?}", s.string(self.symbol))
 	}
 }
 
@@ -108,6 +108,7 @@ impl Repr for Const {
 impl Repr for Expression {
 	fn repr(&self, i: &Interners) -> String {
 		match &self.kind {
+			ExpressionKind::Super => "Super".to_string(),
 			ExpressionKind::Ident(id) => id.repr(i),
 			ExpressionKind::Const(c) => c.repr(i),
 			ExpressionKind::Binary { op, exprs } => {
@@ -218,18 +219,18 @@ impl Repr for Type {
 			TypeKind::SingleUserType(id)     => id.repr(i),
 			TypeKind::DottedUserType(ids)    => format!(".{}", ids.repr(i)),
 			TypeKind::NativeType(id)         => format!("@{}", id.repr(i)),
-			TypeKind::ReadonlyType(id)       => format!("ReadOnly<{}>", id.repr(i)),
-			TypeKind::ReadonlyNativeType(id) => format!("ReadOnly<@{}>", id.repr(i)),
+			TypeKind::ReadonlyType(id)       => format!("ReadOnly< {} >", id.repr(i)),
+			TypeKind::ReadonlyNativeType(id) => format!("ReadOnly< @{} >", id.repr(i)),
 			TypeKind::Class(ids) => {
-				format!("Class{}", if let Some(ids) = ids { format!("<{}>", ids.repr(i)) } else { "".to_string() })
+				format!("Class{}", if let Some(ids) = ids { format!("< {} >", ids.repr(i)) } else { "".to_string() })
 			}
 			TypeKind::Map(tys) => {
 				let tys = tys.as_ref();
-				format!("Map<{}, {}>", tys.0.repr(i), tys.1.repr(i))
+				format!("Map< {}, {} >", tys.0.repr(i), tys.1.repr(i))
 			}
 			TypeKind::DynArray(ty) => {
 				let ty = ty.as_ref();
-				format!("Array<{}>", ty.repr(i))
+				format!("Array< {} >", ty.repr(i))
 			}
 			TypeKind::Let => { "let".to_string() }
 		}
@@ -843,8 +844,8 @@ impl Tree for Declaration {
 					let v: Option<Vec<String>> = c.1.as_ref().map(|x| x.list.iter().map(|y| format!("[{}]", y.repr(i))).collect());
 					builder.add_empty_child(format!("{}{}", c.0.repr(i), v.map(|x| x.join("")).unwrap_or_else(|| "".to_string())));
 				}
-				m.metadata.tree(i, builder);
 				builder.end_child();
+				m.metadata.tree(i, builder);
 				builder.end_child();
 			}
 		}

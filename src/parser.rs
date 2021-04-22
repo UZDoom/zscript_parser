@@ -349,6 +349,23 @@ impl<'src> Parser<'src> {
 		} else { None }
 	}
 	#[inline(always)]
+	fn get_string_concat(&mut self) -> Option<StringConst> {
+		if let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
+			let mut sym = self.string_interner.interned(s);
+			let t = self.tokenizer.next(&mut self.errs).unwrap();
+			let mut span = t.span(self.text);
+			while let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
+				let new = self.string_interner.string(sym).to_string() + s;
+				let t = self.tokenizer.next(&mut self.errs).unwrap();
+				sym = self.string_interner.interned(&new);
+				span = span.combine(t.span(self.text));
+			}
+			Some(StringConst {
+				span, symbol: sym
+			})
+		} else { None }
+	}
+	#[inline(always)]
 	fn get_name(&mut self) -> Option<NameConst> {
 		if let Some(Token { data: TokenData::Name(s), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let sym = self.name_interner.interned(s);
@@ -391,7 +408,7 @@ impl<'src> Parser<'src> {
 
 	#[inline(always)]
 	fn get_const(&mut self) -> Option<Const> {
-		if let Some(s) = self.get_string() {
+		if let Some(s) = self.get_string_concat() {
 			Some(Const { span: s.span, kind: ConstKind::String(s) })
 		} else if let Some(s) = self.get_name() {
 			Some(Const { span: s.span, kind: ConstKind::Name(s) })
@@ -490,13 +507,18 @@ impl<'src> Parser<'src> {
 	}
 
 	fn get_primary_expr(&mut self) -> Result<Option<Expression>, ParsingError> {
+		if let Some((_, s)) = self.get_keyword(&[Keyword::Super]) {
+			return Ok(Some(Expression {
+				span: s,
+				kind: ExpressionKind::Super
+			}));
+		}
 		if let Some(c) = self.get_const() {
 			return Ok(Some(Expression {
 				span: c.span,
 				kind: ExpressionKind::Const(c)
 			}));
 		}
-
 		if let Some((_, s0)) = self.get_punc(&[Punctuation::LeftRound]) {
 			return if self.get_keyword(&[Keyword::Class]).is_some() {
 				let ex = self.get_punc(&[Punctuation::LeftAngle]);
@@ -2452,7 +2474,7 @@ impl<'src> Parser<'src> {
 			if let Some(Token { data: TokenData::Include, .. }) = self.tokenizer.peek(&mut self.errs) {
 				let t = self.tokenizer.next(&mut self.errs).unwrap();
 
-				let ex = self.get_string();
+				let ex = self.get_string_concat();
 				let path = match self.expect(ex, "a string constant") {
 					Ok(p) => p,
 					Err(e) => { self.err(e); break; }
