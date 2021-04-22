@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use vec1::Vec1;
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -6,23 +5,23 @@ use std::ops::Range;
 use crate::{File, Span};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FileSpans {
-	pub file: Arc<File>,
+pub struct FileSpans<'src> {
+	pub file: &'src File,
 	pub main_spans: Vec1<Span>,
 	pub info_spans: Vec<Span>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsingError {
+pub struct ParsingError<'src> {
 	pub msg: String,
-	pub file_spans: Vec<FileSpans>
+	pub file_spans: Vec<FileSpans<'src>>
 }
 
-impl ParsingError {
-	fn get_lines(&self) -> ParsingErrorLines {
+impl<'src> ParsingError<'src> {
+	fn get_lines(&self) -> ParsingErrorLines<'src> {
 		let mut ret = ParsingErrorLines { file_lines: vec![] };
 		for f in self.file_spans.iter() {
-			let mut file_line = (f.file.clone(), BTreeMap::new());
+			let mut file_line = (f.file, BTreeMap::new());
 			for s in f.main_spans.iter() {
 				let span_lines = get_span_lines(&f.file.lines, *s);
 				for l in span_lines.lines {
@@ -64,11 +63,11 @@ struct ErrorLineRanges {
 	info: Vec<Range<usize>>
 }
 
-struct ParsingErrorLines {
-	file_lines: Vec<(Arc<File>, BTreeMap<usize, ErrorLineRanges>)>
+struct ParsingErrorLines<'src> {
+	file_lines: Vec<(&'src File, BTreeMap<usize, ErrorLineRanges>)>
 }
 
-impl ParsingErrorLines {
+impl ParsingErrorLines<'_> {
 	fn repr(&self) -> String {
 		let mut ret = "".to_string();
 		for (file, lines_ranges) in self.file_lines.iter() {
