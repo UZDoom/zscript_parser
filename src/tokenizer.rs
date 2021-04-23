@@ -2,14 +2,14 @@ use std::borrow::Cow;
 use regex::Regex;
 use lazy_static::lazy_static;
 
-use crate::File;
 use crate::Span;
+use crate::filesystem::FileIndex;
 use crate::err::ParsingError;
 use crate::err::FileSpans;
 
 macro_rules! define_token_rule {
 	($reg: expr => $s: ident, $c: ident, $action: expr) => {
-		|file, remaining| {
+		|file: FileIndex, text: &'src str, remaining: &'src str| {
 			lazy_static! {
 				static ref RE: Regex = Regex::new(concat!("^(", $reg, ")")).unwrap();
 			}
@@ -26,7 +26,7 @@ macro_rules! define_token_rule {
 					file_spans: vec![
 						FileSpans {
 							file,
-							main_spans: vec1::vec1![span(&file.text, remaining)],
+							main_spans: vec1::vec1![span(&text, remaining)],
 							info_spans: vec![]
 						}
 					]
@@ -42,17 +42,17 @@ macro_rules! define_token_rule {
 
 macro_rules! define_token_rule_func {
 	($rule: ident: $reg: literal => $s: ident, $c: ident, $action: expr) => {
-		fn $rule<'src>(file: &'src File, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError<'src>>, &'src str)> {
-			define_token_rule!($reg => $s, $c, $action)(file, remaining)
+		fn $rule<'src>(file: FileIndex, text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
+			define_token_rule!($reg => $s, $c, $action)(file, text, remaining)
 		}
 	};
 }
 
 macro_rules! first_of {
 	($rules: expr) => {
-		|file, remaining| {
+		|file, text, remaining| {
 			for r in $rules {
-				if let Some(t) = r(file, remaining) {
+				if let Some(t) = r(file, text, remaining) {
 					return Some(t);
 				}
 			}
@@ -84,11 +84,11 @@ macro_rules! rule_grouping_type {
 
 		#[allow(unused)]
 		fn $reg_func<'src>(
-			file: &'src File, remaining: &'src str
-		) -> Option<(Result<Token<'src>, ParsingError<'src>>, &'src str)> {
+			file: FileIndex, text: &'src str, remaining: &'src str
+		) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
 			first_of!(&[
 				$(
-					|file, remaining| {
+					|file, text, remaining| {
 						lazy_static! {
 							static ref RE: Regex = {
 								let mut rule = "^(".to_string();
@@ -111,7 +111,7 @@ macro_rules! rule_grouping_type {
 						))
 					},
 				)*
-			])(file, remaining)
+			])(file, text, remaining)
 		}
 
 		#[allow(unused)]
@@ -238,12 +238,12 @@ rule_grouping_type!(Punctuation, punc, match_punc {
 	r"@"    => AtSign
 });
 
-fn states_punc<'src>(file: &'src File, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError<'src>>, &'src str)> {
+fn states_punc<'src>(file: FileIndex, text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
 	first_of!(&[
 		define_token_rule!(r":"  => _s, c, Ok(TokenData::Punctuation(Punctuation::Colon))),
 		define_token_rule!(r";"  => _s, c, Ok(TokenData::Punctuation(Punctuation::Semicolon))),
 		define_token_rule!(r"\}" => _s, c, Ok(TokenData::Punctuation(Punctuation::RightCurly))),
-	])(file, remaining)
+	])(file, text, remaining)
 }
 
 rule_grouping_type!(Keyword, keyword, match_keyword {
@@ -427,7 +427,8 @@ fn skip_whitespace<'src>(remaining: &'src str) -> &'src str {
 
 #[derive(Debug)]
 pub struct Tokenizer<'src> {
-	file: &'src File,
+	file: FileIndex,
+	text: &'src str,
 	remaining: &'src str,
 	states_mode: bool,
 	peeked1: Option<Option<Token<'src>>>,
@@ -435,8 +436,8 @@ pub struct Tokenizer<'src> {
 }
 
 impl<'src> Tokenizer<'src> {
-	pub fn new(file: &'src File) -> Self {
-		Self { file, remaining: &file.text, states_mode: false, peeked1: None, peeked2: None }
+	pub fn new(file: FileIndex, text: &'src str) -> Self {
+		Self { file, text, remaining: text, states_mode: false, peeked1: None, peeked2: None }
 	}
 
 	pub fn set_states_mode(&mut self, mode: bool) {
@@ -444,7 +445,7 @@ impl<'src> Tokenizer<'src> {
 		self.states_mode = mode;
 	}
 
-	fn next_internal(&mut self) -> Option<Result<Token<'src>, ParsingError<'src>>> {
+	fn next_internal(&mut self) -> Option<Result<Token<'src>, ParsingError>> {
 		self.remaining = skip_whitespace(self.remaining);
 		if self.remaining.is_empty() { return None; }
 
@@ -453,7 +454,7 @@ impl<'src> Tokenizer<'src> {
 				&[
 					string, states_punc, nws
 				]
-			)(&self.file, self.remaining);
+			)(self.file, self.text, self.remaining);
 			if let Some((token, new_remaining)) = result {
 				self.remaining = new_remaining;
 				Some(
@@ -471,7 +472,7 @@ impl<'src> Tokenizer<'src> {
 		} else {
 			let result = first_of!(
 				&[include, ident_or_keyword, name, string, float, int, punc]
-			)(&self.file, self.remaining);
+			)(self.file, self.text, self.remaining);
 			if let Some((token, new_remaining)) = result {
 				self.remaining = new_remaining;
 				Some(token)
@@ -482,7 +483,7 @@ impl<'src> Tokenizer<'src> {
 		}
 	}
 
-	pub fn next(&mut self, errs: &mut Vec<ParsingError<'src>>) -> Option<Token<'src>> {
+	pub fn next(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
 		if self.peeked1.is_some() {
 			let ret = self.peeked1.take().unwrap();
 			self.peeked1 = self.peeked2.take();
@@ -498,7 +499,7 @@ impl<'src> Tokenizer<'src> {
 		}
 	}
 
-	pub fn peek(&mut self, errs: &mut Vec<ParsingError<'src>>) -> &Option<Token<'src>> {
+	pub fn peek(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
 		if let None = self.peeked1 {
 			self.peeked1 = Some(self.next(errs));
 		}
@@ -509,7 +510,7 @@ impl<'src> Tokenizer<'src> {
 		}
 	}
 
-	pub fn peek_twice(&mut self, errs: &mut Vec<ParsingError<'src>>) -> &Option<Token<'src>> {
+	pub fn peek_twice(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
 		if self.peeked1.is_none() { panic!("peek_twice requested when nothing has been peeked once"); }
 
 		if let None = self.peeked2 {
@@ -529,12 +530,12 @@ impl<'src> Tokenizer<'src> {
 mod test {
 	use super::*;
 
-	fn dummy_file(s: String) -> File { File { filename: "dummy".to_string(), text: s, lines: vec![] } }
+	fn dummy_file() -> FileIndex { FileIndex(0) }
 
 	#[test]
 	fn test_ident() {
-		let f = dummy_file(r"_something5 hi".to_string());
-		let (tok, rest) = ident_or_keyword(&f, &f.text).unwrap();
+		let s = r"_something5 hi";
+		let (tok, rest) = ident_or_keyword(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -547,8 +548,8 @@ mod test {
 
 	#[test]
 	fn test_name() {
-		let f = dummy_file(r"'Hello \n hi me!' crazy".to_string());
-		let (tok, rest) = name(&f, &f.text).unwrap();
+		let s = r"'Hello \n hi me!' crazy";
+		let (tok, rest) = name(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -558,8 +559,8 @@ mod test {
 		);
 		assert_eq!(rest, " crazy");
 
-		let f = dummy_file(r"'Hello \n hi' me!' crazy".to_string());
-		let (tok, rest) = name(&f, &f.text).unwrap();
+		let s = r"'Hello \n hi' me!' crazy";
+		let (tok, rest) = name(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -569,16 +570,16 @@ mod test {
 		);
 		assert_eq!(rest, " me!' crazy");
 
-		let f = dummy_file("'Hello \\n hi me!\n crazy".to_string());
-		let (tok, rest) = name(&f, &f.text).unwrap();
+		let s = "'Hello \\n hi me!\n crazy";
+		let (tok, rest) = name(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap_err(),
 			ParsingError {
 				msg: "unterminated name literal".to_string(),
 				file_spans: vec![
 					FileSpans {
-						file: &f,
-						main_spans: vec1::vec1![Span { start: 0, end: f.text.len() }],
+						file: dummy_file(),
+						main_spans: vec1::vec1![Span { start: 0, end: s.len() }],
 						info_spans: vec![],
 					}
 				]
@@ -589,8 +590,8 @@ mod test {
 
 	#[test]
 	fn test_string() {
-		let f = dummy_file(r#""Hello \" ' hi me!" crazy"#.to_string());
-		let (tok, rest) = string(&f, &f.text).unwrap();
+		let s = r#""Hello \" ' hi me!" crazy"#;
+		let (tok, rest) = string(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -600,8 +601,8 @@ mod test {
 		);
 		assert_eq!(rest, " crazy");
 
-		let f = dummy_file(concat!(r#""Hello \" "#, "\n", r#"' hi me!" crazy"#).to_string());
-		let (tok, rest) = string(&f, &f.text).unwrap();
+		let s = concat!(r#""Hello \" "#, "\n", r#"' hi me!" crazy"#);
+		let (tok, rest) = string(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -611,16 +612,16 @@ mod test {
 		);
 		assert_eq!(rest, " crazy");
 
-		let f = dummy_file(r#""Hello \" ' hi me! crazy"#.to_string());
-		let (tok, rest) = string(&f, &f.text).unwrap();
+		let s = r#""Hello \" ' hi me! crazy"#;
+		let (tok, rest) = string(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap_err(),
 			ParsingError {
 				msg: "unterminated string literal".to_string(),
 				file_spans: vec![
 					FileSpans {
-						file: &f,
-						main_spans: vec1::vec1![Span { start: 0, end: f.text.len() }],
+						file: dummy_file(),
+						main_spans: vec1::vec1![Span { start: 0, end: s.len() }],
 						info_spans: vec![],
 					}
 				]
@@ -631,8 +632,8 @@ mod test {
 
 	#[test]
 	fn test_int() {
-		let f = dummy_file(r#"0x45A2u some other stuff"#.to_string());
-		let (tok, rest) = int(&f, &f.text).unwrap();
+		let s = r#"0x45A2u some other stuff"#;
+		let (tok, rest) = int(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -645,8 +646,8 @@ mod test {
 
 	#[test]
 	fn test_float() {
-		let f = dummy_file(r#".245e-42f some other stuff"#.to_string());
-		let (tok, rest) = float(&f, &f.text).unwrap();
+		let s = r#".245e-42f some other stuff"#;
+		let (tok, rest) = float(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -659,8 +660,8 @@ mod test {
 
 	#[test]
 	fn test_nws() {
-		let f = dummy_file(r#"Test#24[/]#£2" other things"#.to_string());
-		let (tok, rest) = nws(&f, &f.text).unwrap();
+		let s = r#"Test#24[/]#£2" other things"#;
+		let (tok, rest) = nws(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -673,8 +674,8 @@ mod test {
 
 	#[test]
 	fn test_punc() {
-		let f = dummy_file(r#">>= hi"#.to_string());
-		let (tok, rest) = punc(&f, &f.text).unwrap();
+		let s = r#">>= hi"#;
+		let (tok, rest) = punc(dummy_file(), s, s).unwrap();
 		assert_eq!(
 			tok.unwrap(),
 			Token {
@@ -696,8 +697,7 @@ mod test {
 			#endregion
 		"#;
 		let mut errs = vec![];
-		let file = dummy_file(s.to_string());
-		let mut tok = Tokenizer::new(&file);
+		let mut tok = Tokenizer::new(dummy_file(), s);
 		assert_eq!(
 			tok.next(&mut errs).unwrap(),
 			Token {
@@ -766,8 +766,8 @@ mod test {
 
 	#[test]
 	fn test_tokenizer_states() {
-		let f = dummy_file(r#"HI#24 AA##A ; "Hello\t...""#.to_string());
-		let mut tok = Tokenizer::new(&f);
+		let s = r#"HI#24 AA##A ; "Hello\t...""#;
+		let mut tok = Tokenizer::new(dummy_file(), s);
 		tok.set_states_mode(true);
 		let mut errs = vec![];
 		assert_eq!(

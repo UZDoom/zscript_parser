@@ -8,6 +8,8 @@ edition = "2018"
 
 [dependencies]
 lazy_static = "1.4.0"
+parking_lot = "0.11.1"
 ptree = "0.3.2"
+rayon = "1.5.0"
 regex = "1.4.5"
 vec1 = "1.8.0"

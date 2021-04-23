@@ -1,54 +1,50 @@
+use std::sync::{Arc, RwLock};
+
 use regex::Regex;
 use lazy_static::*;
 use vec1::{Vec1, vec1};
 
-use super::*;
-use super::ast::*;
-use super::ast::print::Tree;
-use super::tokenizer::*;
-use super::interner::*;
-
+use crate::*;
+use crate::ast::*;
+use crate::tokenizer::*;
+use crate::interner::*;
+use crate::filesystem::Files;
+use crate::filesystem::FileIndex;
 use crate::err::ParsingError;
 use crate::err::FileSpans;
 
 #[derive(Debug)]
 pub struct Parser<'src> {
-	file: &'src File,
+	file: FileIndex,
+	text: &'src str,
 	tokenizer: Tokenizer<'src>,
-	errs: Vec<ParsingError<'src>>,
-	name_interner: NameInterner,
-	string_interner: StringInterner
+	errs: Vec<ParsingError>,
+	name_interner: Arc<RwLock<NameInterner>>,
+	string_interner: Arc<RwLock<StringInterner>>
 }
 
 #[derive(Debug)]
-pub struct ParserResult<'src> {
-	pub file: &'src File,
+pub struct ParserResult {
+	pub file: FileIndex,
 	pub ast: TopLevel,
-	pub errs: Vec<ParsingError<'src>>,
-	pub name_interner: NameInterner,
-	pub string_interner: StringInterner
+	pub errs: Vec<ParsingError>,
 }
 
-impl std::fmt::Display for ParserResult<'_> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl ParserResult {
+	pub fn repr(&self, files: &Files, interners: &Interners) -> String {
+		let mut ret = "".to_string();
 		let mut newline = false;
 		if self.errs.len() > 0 {
 			for e in self.errs.iter() {
-				write!(f, "{}", e.repr())?;
+				ret += &e.repr(files);
 			}
 			newline = true;
 		}
 
-		if newline { write!(f, "\n")?; }
-		let mut builder = ptree::TreeBuilder::new("AST".to_string());
-		self.ast.tree(&(&self.name_interner, &self.string_interner), &mut builder);
-		let t = builder.build();
-		let mut cursor: std::io::Cursor<Vec<u8>> = std::io::Cursor::new(Vec::new());
-		ptree::write_tree(&t, &mut cursor).unwrap();
-		let data = cursor.into_inner();
-		write!(f, "{}", std::str::from_utf8(&data).unwrap())?;
+		if newline { ret += "\n"; }
+		ret += &self.ast.repr(interners);
 
-		Ok(())
+		ret
 	}
 }
 
@@ -243,17 +239,21 @@ enum Extend {
 }
 
 impl<'src> Parser<'src> {
-	pub fn new(file: &'src File) -> Self {
+	pub fn new(
+		file: FileIndex, text: &'src str,
+		name_interner: Arc<RwLock<NameInterner>>, string_interner: Arc<RwLock<StringInterner>>
+	) -> Self {
 		Self {
 			file,
-			tokenizer: Tokenizer::new(file),
+			text,
+			tokenizer: Tokenizer::new(file, text),
 			errs: vec![],
-			name_interner: NameInterner::default(),
-			string_interner: StringInterner::default(),
+			name_interner,
+			string_interner,
 		}
 	}
 
-	fn err(&mut self, e: ParsingError<'src>) {
+	fn err(&mut self, e: ParsingError) {
 		self.errs.push(e);
 	}
 
@@ -263,7 +263,7 @@ impl<'src> Parser<'src> {
 			for key in keywords {
 				if *key == *k {
 					let t = self.tokenizer.next(&mut self.errs).unwrap();
-					let span = t.span(&self.file.text);
+					let span = t.span(&self.text);
 					if let Token { data: TokenData::Keyword(k), .. } = t {
 						return Some((k, span));
 					} else { unreachable!() }
@@ -280,7 +280,7 @@ impl<'src> Parser<'src> {
 			for punc in puncs {
 				if *punc == *p {
 					let t = self.tokenizer.next(&mut self.errs).unwrap();
-					let span = t.span(&self.file.text);
+					let span = t.span(&self.text);
 					if let Token { data: TokenData::Punctuation(p), .. } = t {
 						return Some((p, span));
 					} else { unreachable!() }
@@ -294,13 +294,13 @@ impl<'src> Parser<'src> {
 	#[inline(always)]
 	fn get_specific_ident(&mut self, idents: &[&str]) -> Option<Identifier> {
 		if let Some(Token { data: TokenData::Identifier(i), .. }) = self.tokenizer.peek(&mut self.errs) {
-			let i_sym = self.name_interner.interned(i);
+			let i_sym = intern(&self.name_interner, i);
 			for id in idents {
-				let id_sym = self.name_interner.interned(id);
+				let id_sym = intern(&self.name_interner, id);
 				if id_sym == i_sym {
 					let t = self.tokenizer.next(&mut self.errs).unwrap();
 					return Some(Identifier {
-						span: t.span(&self.file.text),
+						span: t.span(&self.text),
 						symbol: i_sym,
 					});
 				}
@@ -313,10 +313,10 @@ impl<'src> Parser<'src> {
 	#[inline(always)]
 	fn get_ident(&mut self) -> Option<Identifier> {
 		if let Some(Token { data: TokenData::Identifier(s), .. }) = self.tokenizer.peek(&mut self.errs) {
-			let sym = self.name_interner.interned(s);
+			let sym = intern(&self.name_interner, s);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
 			Some(Identifier {
-				span: t.span(&self.file.text),
+				span: t.span(&self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -324,10 +324,10 @@ impl<'src> Parser<'src> {
 	#[inline(always)]
 	fn get_nws(&mut self) -> Option<NonWhitespace> {
 		if let Some(Token { data: TokenData::NonWhitespace(s), .. }) = self.tokenizer.peek(&mut self.errs) {
-			let sym = self.name_interner.interned(s);
+			let sym = intern(&self.name_interner, s);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
 			Some(NonWhitespace {
-				span: t.span(&self.file.text),
+				span: t.span(&self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -335,10 +335,10 @@ impl<'src> Parser<'src> {
 	#[inline(always)]
 	fn get_string(&mut self) -> Option<StringConst> {
 		if let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
-			let sym = self.string_interner.interned(s);
+			let sym = intern(&self.string_interner, s);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
 			Some(StringConst {
-				span: t.span(&self.file.text),
+				span: t.span(&self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -346,14 +346,17 @@ impl<'src> Parser<'src> {
 	#[inline(always)]
 	fn get_string_concat(&mut self) -> Option<StringConst> {
 		if let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
-			let mut sym = self.string_interner.interned(s);
+			let mut sym = intern(&self.string_interner, s);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
-			let mut span = t.span(&self.file.text);
+			let mut span = t.span(&self.text);
 			while let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
-				let new = self.string_interner.string(sym).to_string() + s;
+				let new = {
+					let l = self.string_interner.read().unwrap();
+					l.string(sym).to_string() + s
+				};
 				let t = self.tokenizer.next(&mut self.errs).unwrap();
-				sym = self.string_interner.interned(&new);
-				span = span.combine(t.span(&self.file.text));
+				sym = intern(&self.string_interner, &new);
+				span = span.combine(t.span(&self.text));
 			}
 			Some(StringConst {
 				span, symbol: sym
@@ -363,10 +366,10 @@ impl<'src> Parser<'src> {
 	#[inline(always)]
 	fn get_name(&mut self) -> Option<NameConst> {
 		if let Some(Token { data: TokenData::Name(s), .. }) = self.tokenizer.peek(&mut self.errs) {
-			let sym = self.name_interner.interned(s);
+			let sym = intern(&self.name_interner, s);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
 			Some(NameConst {
-				span: t.span(&self.file.text),
+				span: t.span(&self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -377,7 +380,7 @@ impl<'src> Parser<'src> {
 			let (val, long, unsigned) = (*val, *long, *unsigned);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
 			Some(IntConst {
-				span: t.span(&self.file.text),
+				span: t.span(&self.text),
 				val, long, unsigned
 			})
 		} else { None }
@@ -388,7 +391,7 @@ impl<'src> Parser<'src> {
 			let (val, double) = (*val, *double);
 			let t = self.tokenizer.next(&mut self.errs).unwrap();
 			Some(FloatConst {
-				span: t.span(&self.file.text),
+				span: t.span(&self.text),
 				val, double
 			})
 		} else { None }
@@ -421,7 +424,7 @@ impl<'src> Parser<'src> {
 	}
 
 	#[inline(always)]
-	fn expect<T>(&mut self, val: Option<T>, msg: &str) -> Result<T, ParsingError<'src>> {
+	fn expect<T>(&mut self, val: Option<T>, msg: &str) -> Result<T, ParsingError> {
 		if let Some(v) = val {
 			Ok(v)
 		} else {
@@ -431,14 +434,14 @@ impl<'src> Parser<'src> {
 				None => format!("expected {}, got `EOF`", msg),
 			};
 			let span = match next {
-			    Some(n) => n.span(&self.file.text),
-			    None    => Span { start: self.file.text.len(), end: self.file.text.len() }
+			    Some(n) => n.span(&self.text),
+			    None    => Span { start: self.text.len(), end: self.text.len() }
 			};
 			Err(ParsingError {
 				msg: err_msg,
 				file_spans: vec![
 					FileSpans {
-						file: &self.file,
+						file: self.file,
 						main_spans: vec1![span],
 						info_spans: vec![]
 					}
@@ -447,7 +450,7 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	fn get_lump_version(&mut self) -> Result<Option<VersionInfo>, ParsingError<'src>> {
+	fn get_lump_version(&mut self) -> Result<Option<VersionInfo>, ParsingError> {
 		if self.get_keyword(&[Keyword::Version][..]).is_some() {
 			let ex = self.get_string();
 			let s = self.expect(ex, "string literal")?;
@@ -456,7 +459,9 @@ impl<'src> Parser<'src> {
 					r"^(?P<Major>[0-9]+)\. *(?P<Minor>[0-9]+)(\. *(?P<Revision>[0-9]+))?$"
 				).unwrap();
 			}
-			let c = RE.captures(&self.string_interner.string(s.symbol));
+			let l = self.string_interner.read().unwrap();
+			let lump_str = l.string(s.symbol);
+			let c = RE.captures(lump_str);
 			if let Some(c) = c {
 				// TODO: once int_error_matching is stabilized, redo this
 				let major = u16::from_str_radix(c.name("Major").unwrap().as_str(), 10).unwrap_or(0);
@@ -469,7 +474,7 @@ impl<'src> Parser<'src> {
 					msg: "invalid version directive".to_string(),
 					file_spans: vec![
 						FileSpans {
-							file: &self.file,
+							file: self.file,
 							main_spans: vec1![s.span],
 							info_spans: vec![]
 						}
@@ -481,7 +486,7 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	fn get_dottable_id(&mut self) -> Result<Option<DottableId>, ParsingError<'src>> {
+	fn get_dottable_id(&mut self) -> Result<Option<DottableId>, ParsingError> {
 		let id = match self.get_ident() {
 			None => return Ok(None),
 			Some(id) => id
@@ -501,7 +506,7 @@ impl<'src> Parser<'src> {
 		Ok(Some(ret))
 	}
 
-	fn get_primary_expr(&mut self) -> Result<Option<Expression>, ParsingError<'src>> {
+	fn get_primary_expr(&mut self) -> Result<Option<Expression>, ParsingError> {
 		if let Some((_, s)) = self.get_keyword(&[Keyword::Super]) {
 			return Ok(Some(Expression {
 				span: s,
@@ -588,7 +593,7 @@ impl<'src> Parser<'src> {
 			let rhs = self.get_expr_inner(p, r_prec)?;
 
 			return Ok(Some(Expression {
-				span: op_tok.unwrap().span(&self.file.text).combine(rhs.span),
+				span: op_tok.unwrap().span(&self.text).combine(rhs.span),
 				kind: ExpressionKind::Prefix { op, expr: Box::new(rhs) }
 			}));
 		}
@@ -597,7 +602,7 @@ impl<'src> Parser<'src> {
 			if let Some((_, s)) = self.get_keyword(&[Keyword::Default]) {
 				Identifier {
 					span: s,
-					symbol: self.name_interner.interned("default")
+					symbol: intern(&self.name_interner, "default")
 				}
 			} else if let Some(id) = self.get_ident() {
 				id
@@ -612,7 +617,7 @@ impl<'src> Parser<'src> {
 
 	fn get_expr_inner(
 		&mut self, lhs: Expression, min_precedence: usize
-	) -> Result<Expression, ParsingError<'src>> {
+	) -> Result<Expression, ParsingError> {
 		let mut lhs = lhs;
 		loop {
 			let op_tok = self.tokenizer.peek(&mut self.errs);
@@ -623,7 +628,7 @@ impl<'src> Parser<'src> {
 				let op_tok = self.tokenizer.next(&mut self.errs);
 
 				lhs = Expression {
-					span: lhs.span.combine(op_tok.unwrap().span(&self.file.text)),
+					span: lhs.span.combine(op_tok.unwrap().span(&self.text)),
 					kind: ExpressionKind::Postfix {
 						op,
 						expr: Box::new(lhs)
@@ -689,7 +694,7 @@ impl<'src> Parser<'src> {
 						}
 					}
 					InfixOp::LeftRound => {
-						let (exprs, s1) = self.get_function_call_args(op_tok.unwrap().span(&self.file.text))?;
+						let (exprs, s1) = self.get_function_call_args(op_tok.unwrap().span(&self.text))?;
 						Expression {
 							span: lhs.span.combine(s1),
 							kind: ExpressionKind::FunctionCall {
@@ -708,7 +713,7 @@ impl<'src> Parser<'src> {
 		Ok(lhs)
 	}
 
-	fn get_function_call_args(&mut self, s0: Span) -> Result<(Vec<FunctionCallArg>, Span), ParsingError<'src>> {
+	fn get_function_call_args(&mut self, s0: Span) -> Result<(Vec<FunctionCallArg>, Span), ParsingError> {
 		if let Some((_, s1)) = self.get_punc(&[Punctuation::RightRound]) {
 			Ok((vec![], s0.combine(s1)))
 		} else {
@@ -754,12 +759,12 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	fn get_expr(&mut self) -> Result<Option<Expression>, ParsingError<'src>> {
+	fn get_expr(&mut self) -> Result<Option<Expression>, ParsingError> {
 		let p = if let Some(p) = self.get_primary_expr()? { p } else { return Ok(None); };
 		self.get_expr_inner(p, 0).map(|x| Some(x))
 	}
 
-	fn get_expr_list(&mut self) -> Result<Option<ExprList>, ParsingError<'src>> {
+	fn get_expr_list(&mut self) -> Result<Option<ExprList>, ParsingError> {
 		let expr = if let Some(e) = self.get_expr()? { e } else { return Ok(None); };
 		let mut list = vec1![expr];
 
@@ -776,7 +781,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_compound_statement(&mut self) -> Result<Option<CompoundStatement>, ParsingError<'src>> {
+	fn get_compound_statement(&mut self) -> Result<Option<CompoundStatement>, ParsingError> {
 		let p = self.get_punc(&[Punctuation::LeftCurly]);
 		if p.is_none() { return Ok(None); }
 		let (_, s0) = p.unwrap();
@@ -801,7 +806,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_variable_declaration(&mut self) -> Result<Option<LocalVariableDefinition>, ParsingError<'src>> {
+	fn get_variable_declaration(&mut self) -> Result<Option<LocalVariableDefinition>, ParsingError> {
 		if let Some(Token { data: TokenData::Identifier { .. }, .. }) = self.tokenizer.peek(&mut self.errs) {
 			if !matches!(self.tokenizer.peek_twice(&mut self.errs), Some(Token { data: TokenData::Identifier { .. }, .. })) {
 				return Ok(None);
@@ -901,7 +906,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_if_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError<'src>> {
+	fn get_if_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftRound]);
 		self.expect(ex, "`(`")?;
 
@@ -933,7 +938,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 	
-	fn get_switch_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError<'src>> {
+	fn get_switch_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftRound]);
 		self.expect(ex, "`(`")?;
 
@@ -955,7 +960,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_while_until_body(&mut self, start: Keyword, s0: Span) -> Result<Option<Statement>, ParsingError<'src>> {
+	fn get_while_until_body(&mut self, start: Keyword, s0: Span) -> Result<Option<Statement>, ParsingError> {
 		let iter_type = match start {
 			Keyword::While => CondIterType::While,
 			Keyword::Until => CondIterType::Until,
@@ -983,7 +988,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_do_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError<'src>> {
+	fn get_do_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError> {
 		let ex = self.get_statement()?;
 		let body = self.expect(ex, "a statement")?;
 
@@ -1013,7 +1018,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_for_init(&mut self) -> Result<Option<ForInit>, ParsingError<'src>> {
+	fn get_for_init(&mut self) -> Result<Option<ForInit>, ParsingError> {
 		if let Some(var_def) = self.get_variable_declaration()? {
 			Ok(Some(ForInit {
 				span: var_def.span,
@@ -1029,7 +1034,7 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	fn get_for_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError<'src>> {
+	fn get_for_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftRound]);
 		self.expect(ex, "`(`")?;
 
@@ -1058,7 +1063,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_static_const_body(&mut self, s0: Span) -> Result<Option<StaticConstArray>, ParsingError<'src>> {
+	fn get_static_const_body(&mut self, s0: Span) -> Result<Option<StaticConstArray>, ParsingError> {
 		if self.get_keyword(&[Keyword::Const]).is_none() { return Ok(None); }
 
 		let ex = self.get_single_type()?;
@@ -1094,7 +1099,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_statement(&mut self) -> Result<Option<Statement>, ParsingError<'src>> {
+	fn get_statement(&mut self) -> Result<Option<Statement>, ParsingError> {
 		if let Some(c) = self.get_compound_statement()? {
 			return Ok(Some(Statement {
 				span: c.span,
@@ -1232,7 +1237,7 @@ impl<'src> Parser<'src> {
 		Ok(None)
 	}
 
-	fn get_single_type(&mut self) -> Result<Option<Type>, ParsingError<'src>> {
+	fn get_single_type(&mut self) -> Result<Option<Type>, ParsingError> {
 		if let Some((_, s)) = self.get_keyword(&[Keyword::Let]) {
 			Ok(Some(Type {
 				span: s,
@@ -1282,7 +1287,7 @@ impl<'src> Parser<'src> {
 				}
 			))
 		} else if let Some(id) = self.get_specific_ident(&["array", "map"]) {
-			if self.name_interner.interned("array") == id.symbol {
+			if intern(&self.name_interner, "array") == id.symbol {
 				let ex = self.get_punc(&[Punctuation::LeftAngle]);
 				self.expect(ex, "`<`")?;
 
@@ -1296,7 +1301,7 @@ impl<'src> Parser<'src> {
 					span: id.span.combine(s1),
 					kind: TypeKind::DynArray(Box::new(inner))
 				}))
-			} else if self.name_interner.interned("map") == id.symbol {
+			} else if intern(&self.name_interner, "map") == id.symbol {
 				let ex = self.get_punc(&[Punctuation::LeftAngle]);
 				self.expect(ex, "`<`")?;
 
@@ -1350,7 +1355,7 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	fn get_array_sizes(&mut self) -> Result<Option<ExprList>, ParsingError<'src>> {
+	fn get_array_sizes(&mut self) -> Result<Option<ExprList>, ParsingError> {
 		let mut ret = None;
 		while let Some((_, s0)) = self.get_punc(&[Punctuation::LeftSquare]) {
 			let ex = self.get_expr()?;
@@ -1375,7 +1380,7 @@ impl<'src> Parser<'src> {
 		Ok(ret)
 	}
 
-	fn get_type_or_array(&mut self) -> Result<Option<TypeOrArray>, ParsingError<'src>> {
+	fn get_type_or_array(&mut self) -> Result<Option<TypeOrArray>, ParsingError> {
 		let ty = if let Some(t) = self.get_single_type()? { t } else { return Ok(None); };
 
 		let sizes = self.get_array_sizes()?;
@@ -1392,7 +1397,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_types_or_void(&mut self) -> Result<Option<TypeListOrVoid>, ParsingError<'src>> {
+	fn get_types_or_void(&mut self) -> Result<Option<TypeListOrVoid>, ParsingError> {
 		if let Some(id) = self.get_specific_ident(&["void"]) {
 			return Ok(Some(TypeListOrVoid {
 				span: id.span,
@@ -1415,7 +1420,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_func_param(&mut self) -> Result<Option<FuncParam>, ParsingError<'src>> {
+	fn get_func_param(&mut self) -> Result<Option<FuncParam>, ParsingError> {
 		let mut flags = vec![];
 		let mut s0 = None;
 		loop {
@@ -1459,7 +1464,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_func_params(&mut self, s0: Span) -> Result<FuncParams, ParsingError<'src>> {
+	fn get_func_params(&mut self, s0: Span) -> Result<FuncParams, ParsingError> {
 		if self.get_specific_ident(&["void"]).is_some() {
 			let ex = self.get_punc(&[Punctuation::RightRound]);
 			let (_, s1) = self.expect(ex, "`)`")?;
@@ -1508,7 +1513,7 @@ impl<'src> Parser<'src> {
 		})
 	}
 
-	fn get_decl_prelude(&mut self) -> Result<Option<(Vec<DeclarationMetadataItem>, Span)>, ParsingError<'src>> {
+	fn get_decl_prelude(&mut self) -> Result<Option<(Vec<DeclarationMetadataItem>, Span)>, ParsingError> {
 		let mut ret = None;
 		let mut top_span = Span { start: 0, end: 0 };
 		loop {
@@ -1619,7 +1624,7 @@ impl<'src> Parser<'src> {
 		Ok(ret.map(|x| (x, top_span)))
 	}
 
-	fn get_declaration(&mut self) -> Result<Option<Declaration>, ParsingError<'src>> {
+	fn get_declaration(&mut self) -> Result<Option<Declaration>, ParsingError> {
 		let metadata = self.get_decl_prelude()?;
 
 		let ex = self.get_types_or_void()?;
@@ -1678,7 +1683,7 @@ impl<'src> Parser<'src> {
 		})))
 	}
 
-	fn get_class_inner(&mut self) -> Result<Option<ClassInner>, ParsingError<'src>> {
+	fn get_class_inner(&mut self) -> Result<Option<ClassInner>, ParsingError> {
 		if let Some(e) = self.get_enum()? {
 			return Ok(Some(ClassInner { span: e.span, kind: ClassInnerKind::Enum(e) }));
 		}
@@ -1711,7 +1716,7 @@ impl<'src> Parser<'src> {
 		}
 		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek(&mut self.errs) {
 			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice(&mut self.errs) {
-				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(&self.file.text);
+				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(&self.text);
 				let s = self.get_static_const_body(s0)?.unwrap();
 				return Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::StaticConstArray(s) }));
 			}
@@ -1726,7 +1731,7 @@ impl<'src> Parser<'src> {
 		Ok(None)
 	}
 
-	fn get_class_ancestry(&mut self) -> Result<Option<DottableId>, ParsingError<'src>> {
+	fn get_class_ancestry(&mut self) -> Result<Option<DottableId>, ParsingError> {
 		if self.get_punc(&[Punctuation::Colon]).is_none() { return Ok(None); }
 
 		let ex = self.get_dottable_id()?;
@@ -1735,7 +1740,7 @@ impl<'src> Parser<'src> {
 		Ok(Some(ancestor))
 	}
 
-	fn get_class_metadata(&mut self) -> Result<Vec<ClassMetadataItem>, ParsingError<'src>> {
+	fn get_class_metadata(&mut self) -> Result<Vec<ClassMetadataItem>, ParsingError> {
 		let mut ret = vec![];
 
 		while let Some((k, s0)) = self.get_keyword(&[
@@ -1772,7 +1777,7 @@ impl<'src> Parser<'src> {
 		Ok(ret)
 	}
 
-	fn get_class_body(&mut self, extend: bool) -> Result<(Vec<ClassInner>, Span), ParsingError<'src>> {
+	fn get_class_body(&mut self, extend: bool) -> Result<(Vec<ClassInner>, Span), ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftCurly]);
 		let (_, s0) = self.expect(ex, if extend { "`{`" } else { "a class metadata item or `{`" })?;
 
@@ -1789,7 +1794,7 @@ impl<'src> Parser<'src> {
 		})
 	}
 
-	fn get_class(&mut self) -> Result<Option<ClassDefinition>, ParsingError<'src>> {
+	fn get_class(&mut self) -> Result<Option<ClassDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Class]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -1812,7 +1817,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_mixin_class_inner(&mut self) -> Result<Option<MixinClassInner>, ParsingError<'src>> {
+	fn get_mixin_class_inner(&mut self) -> Result<Option<MixinClassInner>, ParsingError> {
 		if let Some(e) = self.get_enum()? {
 			return Ok(Some(MixinClassInner { span: e.span, kind: MixinClassInnerKind::Enum(e) }));
 		}
@@ -1836,7 +1841,7 @@ impl<'src> Parser<'src> {
 		}
 		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek(&mut self.errs) {
 			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice(&mut self.errs) {
-				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(&self.file.text);
+				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(&self.text);
 				let s = self.get_static_const_body(s0)?.unwrap();
 				return Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::StaticConstArray(s) }));
 			}
@@ -1851,7 +1856,7 @@ impl<'src> Parser<'src> {
 		Ok(None)
 	}
 
-	fn get_mixin_class_body(&mut self) -> Result<(Vec<MixinClassInner>, Span), ParsingError<'src>> {
+	fn get_mixin_class_body(&mut self) -> Result<(Vec<MixinClassInner>, Span), ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftCurly]);
 		let (_, s0) = self.expect(ex, "`{`")?;
 
@@ -1868,7 +1873,7 @@ impl<'src> Parser<'src> {
 		})
 	}
 
-	fn get_mixin(&mut self) -> Result<Option<MixinClassDefinition>, ParsingError<'src>> {
+	fn get_mixin(&mut self) -> Result<Option<MixinClassDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Mixin]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -1889,7 +1894,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_struct_inner(&mut self) -> Result<Option<StructInner>, ParsingError<'src>> {
+	fn get_struct_inner(&mut self) -> Result<Option<StructInner>, ParsingError> {
 		if let Some(e) = self.get_enum()? {
 			return Ok(Some(StructInner { span: e.span, kind: StructInnerKind::Enum(e) }));
 		}
@@ -1898,7 +1903,7 @@ impl<'src> Parser<'src> {
 		}
 		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek(&mut self.errs) {
 			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice(&mut self.errs) {
-				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(&self.file.text);
+				let s0 = self.tokenizer.next(&mut self.errs).unwrap().span(&self.text);
 				let s = self.get_static_const_body(s0)?.unwrap();
 				return Ok(Some(StructInner { span: s.span, kind: StructInnerKind::StaticConstArray(s) }));
 			}
@@ -1913,7 +1918,7 @@ impl<'src> Parser<'src> {
 		Ok(None)
 	}
 
-	fn get_struct_metadata(&mut self) -> Result<Vec<StructMetadataItem>, ParsingError<'src>> {
+	fn get_struct_metadata(&mut self) -> Result<Vec<StructMetadataItem>, ParsingError> {
 		let mut ret = vec![];
 
 		while let Some((k, s0)) = self.get_keyword(&[
@@ -1944,7 +1949,7 @@ impl<'src> Parser<'src> {
 		Ok(ret)
 	}
 
-	fn get_struct_body(&mut self, extend: bool) -> Result<(Vec<StructInner>, Span), ParsingError<'src>> {
+	fn get_struct_body(&mut self, extend: bool) -> Result<(Vec<StructInner>, Span), ParsingError> {
 		let ex = self.get_punc(&[Punctuation::LeftCurly]);
 		let (_, s0) = self.expect(ex, if extend { "`{`" } else { "a struct metadata item or `{`" })?;
 
@@ -1963,7 +1968,7 @@ impl<'src> Parser<'src> {
 		})
 	}
 
-	fn get_struct(&mut self) -> Result<Option<StructDefinition>, ParsingError<'src>> {
+	fn get_struct(&mut self) -> Result<Option<StructDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Struct]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -1984,7 +1989,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_extend(&mut self) -> Result<Option<Extend>, ParsingError<'src>> {
+	fn get_extend(&mut self) -> Result<Option<Extend>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Extend]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -2020,7 +2025,7 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	fn get_enum(&mut self) -> Result<Option<EnumDefinition>, ParsingError<'src>> {
+	fn get_enum(&mut self) -> Result<Option<EnumDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Enum]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -2035,12 +2040,12 @@ impl<'src> Parser<'src> {
 
 			let s = enum_type.symbol;
 			Some(
-				     if s == self.name_interner.interned("sbyte")  { IntType { span: enum_type.span, kind: IntTypeKind::SByte  } }
-				else if s == self.name_interner.interned("byte")   { IntType { span: enum_type.span, kind: IntTypeKind::Byte   } }
-				else if s == self.name_interner.interned("short")  { IntType { span: enum_type.span, kind: IntTypeKind::Short  } }
-				else if s == self.name_interner.interned("ushort") { IntType { span: enum_type.span, kind: IntTypeKind::UShort } }
-				else if s == self.name_interner.interned("int")    { IntType { span: enum_type.span, kind: IntTypeKind::Int    } }
-				else if s == self.name_interner.interned("uint")   { IntType { span: enum_type.span, kind: IntTypeKind::UInt   } }
+				     if s == intern(&self.name_interner, "sbyte")  { IntType { span: enum_type.span, kind: IntTypeKind::SByte  } }
+				else if s == intern(&self.name_interner, "byte")   { IntType { span: enum_type.span, kind: IntTypeKind::Byte   } }
+				else if s == intern(&self.name_interner, "short")  { IntType { span: enum_type.span, kind: IntTypeKind::Short  } }
+				else if s == intern(&self.name_interner, "ushort") { IntType { span: enum_type.span, kind: IntTypeKind::UShort } }
+				else if s == intern(&self.name_interner, "int")    { IntType { span: enum_type.span, kind: IntTypeKind::Int    } }
+				else if s == intern(&self.name_interner, "uint")   { IntType { span: enum_type.span, kind: IntTypeKind::UInt   } }
 				else { unreachable!() }
 			)
 		} else { None };
@@ -2084,7 +2089,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_const_def(&mut self) -> Result<Option<ConstDefinition>, ParsingError<'src>> {
+	fn get_const_def(&mut self) -> Result<Option<ConstDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Const]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -2108,7 +2113,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_flag_def(&mut self) -> Result<Option<FlagDefinition>, ParsingError<'src>> {
+	fn get_flag_def(&mut self) -> Result<Option<FlagDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::FlagDef]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -2138,7 +2143,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_property_def(&mut self) -> Result<Option<PropertyDefinition>, ParsingError<'src>> {
+	fn get_property_def(&mut self) -> Result<Option<PropertyDefinition>, ParsingError> {
 		let s0 = match self.get_specific_ident(&["property"]) {
 			Some(id) => id.span,
 			None => { return Ok(None); }
@@ -2169,7 +2174,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_default_def(&mut self) -> Result<Option<DefaultDefinition>, ParsingError<'src>> {
+	fn get_default_def(&mut self) -> Result<Option<DefaultDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::Default]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -2222,7 +2227,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	fn get_ident_list(&mut self) -> Result<Vec1<Identifier>, ParsingError<'src>> {
+	fn get_ident_list(&mut self) -> Result<Vec1<Identifier>, ParsingError> {
 		let ex = self.get_ident();
 		let var = self.expect(ex, "an identifier")?;
 		let mut ret = vec1![var];
@@ -2236,7 +2241,7 @@ impl<'src> Parser<'src> {
 		Ok(ret)
 	}
 
-	fn get_states_def(&mut self) -> Result<Option<StatesDefinition>, ParsingError<'src>> {
+	fn get_states_def(&mut self) -> Result<Option<StatesDefinition>, ParsingError> {
 		let s0 = match self.get_keyword(&[Keyword::States]) {
 			Some((_, s)) => s,
 			None => { return Ok(None); }
@@ -2268,7 +2273,7 @@ impl<'src> Parser<'src> {
 				let sym = start.symbol;
 				macro_rules! check {
 					($s: expr, $r: expr) => {
-						if sym == self.name_interner.interned($s) {
+						if sym == intern(&self.name_interner, $s) {
 							let ex = self.get_punc(&[Punctuation::Semicolon]);
 							let (_, s1) = self.expect(ex, "`;`")?;
 							body.push(StatesBodyItem { span: start.span.combine(s1), kind: $r });
@@ -2280,7 +2285,7 @@ impl<'src> Parser<'src> {
 				check!("wait", StatesBodyItemKind::Wait);
 				check!("fail", StatesBodyItemKind::Fail);
 				check!("loop", StatesBodyItemKind::Loop);
-				if sym == self.name_interner.interned("goto") {
+				if sym == intern(&self.name_interner, "goto") {
 					self.tokenizer.set_states_mode(false);
 					let target = if let Some((_, s0)) = self.get_keyword(&[Keyword::Super]) {
 						let ex = self.get_punc(&[Punctuation::DoubleColon]);
@@ -2346,12 +2351,12 @@ impl<'src> Parser<'src> {
 				) {
 					let s = id.symbol;
 
-					if      s == self.name_interner.interned("bright")   { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Bright   }); }
-					else if s == self.name_interner.interned("fast")     { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Fast     }); }
-					else if s == self.name_interner.interned("slow")     { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Slow     }); }
-					else if s == self.name_interner.interned("nodelay")  { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::NoDelay  }); }
-					else if s == self.name_interner.interned("canraise") { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::CanRaise }); }
-					else if s == self.name_interner.interned("offset")   {
+					if      s == intern(&self.name_interner, "bright")   { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Bright   }); }
+					else if s == intern(&self.name_interner, "fast")     { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Fast     }); }
+					else if s == intern(&self.name_interner, "slow")     { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Slow     }); }
+					else if s == intern(&self.name_interner, "nodelay")  { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::NoDelay  }); }
+					else if s == intern(&self.name_interner, "canraise") { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::CanRaise }); }
+					else if s == intern(&self.name_interner, "offset")   {
 						let ex = self.get_punc(&[Punctuation::LeftRound]);
 						self.expect(ex, "`(`")?;
 
@@ -2369,7 +2374,7 @@ impl<'src> Parser<'src> {
 
 						metadata.push(StateLineMetadataItem { span: id.span.combine(s1), kind: StateLineMetadataItemKind::Offset(expr0, expr1) });
 					}
-					else if s == self.name_interner.interned("light")    {
+					else if s == intern(&self.name_interner, "light") {
 						let ex = self.get_punc(&[Punctuation::LeftRound]);
 						self.expect(ex, "`(`")?;
 
@@ -2442,7 +2447,7 @@ impl<'src> Parser<'src> {
 		}))
 	}
 
-	pub fn parse(mut self) -> ParserResult<'src> {
+	pub fn parse(mut self) -> ParserResult {
 		let version = match self.get_lump_version() {
 			Ok(v) => v,
 			Err(e) => {
@@ -2451,8 +2456,6 @@ impl<'src> Parser<'src> {
 					file: self.file,
 					ast: TopLevel { version: None, definitions: vec![] },
 					errs: self.errs,
-					name_interner: self.name_interner,
-					string_interner: self.string_interner
 				};
 			}
 		};
@@ -2475,7 +2478,7 @@ impl<'src> Parser<'src> {
 				};
 
 				definitions.push(TopLevelDefinition {
-					span: t.span(&self.file.text).combine(path.span),
+					span: t.span(&self.text).combine(path.span),
 					kind: TopLevelDefinitionKind::Include(path)
 				});
 				continue;
@@ -2543,9 +2546,7 @@ impl<'src> Parser<'src> {
 				version,
 				definitions
 			},
-			errs: self.errs,
-			name_interner: self.name_interner,
-			string_interner: self.string_interner
+			errs: self.errs
 		}
 	}
 }

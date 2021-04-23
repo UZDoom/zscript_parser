@@ -2,28 +2,31 @@ use vec1::Vec1;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use crate::{File, Span};
+use crate::Span;
+use crate::filesystem::Files;
+use crate::filesystem::FileIndex;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FileSpans<'src> {
-	pub file: &'src File,
+pub struct FileSpans {
+	pub file: FileIndex,
 	pub main_spans: Vec1<Span>,
 	pub info_spans: Vec<Span>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsingError<'src> {
+pub struct ParsingError {
 	pub msg: String,
-	pub file_spans: Vec<FileSpans<'src>>
+	pub file_spans: Vec<FileSpans>
 }
 
-impl<'src> ParsingError<'src> {
-	fn get_lines(&self) -> ParsingErrorLines<'src> {
+impl ParsingError {
+	fn get_lines(&self, files: &Files) -> ParsingErrorLines {
 		let mut ret = ParsingErrorLines { file_lines: vec![] };
 		for f in self.file_spans.iter() {
+			let file = &files[f.file];
 			let mut file_line = (f.file, BTreeMap::new());
 			for s in f.main_spans.iter() {
-				let span_lines = get_span_lines(&f.file.lines, *s);
+				let span_lines = get_span_lines(&file.lines, *s);
 				for l in span_lines.lines {
 					let ranges =
 						file_line.1
@@ -34,7 +37,7 @@ impl<'src> ParsingError<'src> {
 				}
 			}
 			for s in f.info_spans.iter() {
-				let span_lines = get_span_lines(&f.file.lines, *s);
+				let span_lines = get_span_lines(&file.lines, *s);
 				for l in span_lines.lines {
 					let ranges =
 						file_line.1
@@ -49,10 +52,10 @@ impl<'src> ParsingError<'src> {
 		ret
 	}
 
-	pub fn repr(&self) -> String {
+	pub fn repr(&self, files: &Files) -> String {
 		let mut ret = format!("error: {}\n", self.msg);
-		let err_lines = self.get_lines();
-		ret += &err_lines.repr();
+		let err_lines = self.get_lines(files);
+		ret += &err_lines.repr(files);
 		ret
 	}
 }
@@ -63,14 +66,15 @@ struct ErrorLineRanges {
 	info: Vec<Range<usize>>
 }
 
-struct ParsingErrorLines<'src> {
-	file_lines: Vec<(&'src File, BTreeMap<usize, ErrorLineRanges>)>
+struct ParsingErrorLines {
+	file_lines: Vec<(FileIndex, BTreeMap<usize, ErrorLineRanges>)>
 }
 
-impl ParsingErrorLines<'_> {
-	fn repr(&self) -> String {
+impl ParsingErrorLines {
+	fn repr(&self, files: &Files) -> String {
 		let mut ret = "".to_string();
 		for (file, lines_ranges) in self.file_lines.iter() {
+			let file = &files[*file];
 			let text = &*file.text;
 			let max_line = *lines_ranges.keys().max().unwrap();
 			let line_indicator_length = format!("{}", max_line + 1).len();
@@ -82,7 +86,11 @@ impl ParsingErrorLines<'_> {
 					if *l == last + 2 {
 						let last_line_range = &file.lines[l - 1];
 						let last_line_text = &text[last_line_range.start..last_line_range.end];
-						ret += &format!("{:>width$} |{}\n", l - 1 + 1, last_line_text, width = line_indicator_length);
+						ret += &format!(
+							"{:>width$} |{}\n", l - 1 + 1,
+							last_line_text.replace("\t", "    "),
+							width = line_indicator_length
+						);
 					} else if *l > last + 2 {
 						ret += "...\n";
 					}
@@ -103,14 +111,14 @@ impl ParsingErrorLines<'_> {
 						p[x] = 2;
 					}
 				}
-				ret += &format!("{:>width$} |{}\n", l + 1, line_text, width = line_indicator_length);
+				ret += &format!("{:>width$} |{}\n", l + 1, line_text.replace("\t", "    "), width = line_indicator_length);
 				ret += &format!("{} |", " ".repeat(line_indicator_length));
-				for (i, _) in line_text.char_indices() {
-					ret += match p[i] {
+				for (i, c) in line_text.char_indices() {
+					ret += &match p[i] {
 						2 => "^",
 						1 => "-",
 						_ => " "
-					};
+					}.repeat(if c == '\t' { 4 } else { 1 });
 				}
 				ret += match p[p.len() - 1] {
 					2 => "^",

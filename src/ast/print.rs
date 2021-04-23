@@ -1,7 +1,7 @@
 use ptree::TreeBuilder;
 
 use super::*;
-use crate::interner::{NameInterner, StringInterner};
+use crate::interner::Interners;
 
 impl std::fmt::Display for VersionInfo {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -25,8 +25,6 @@ impl std::fmt::Display for FloatConst {
 		Ok(())
 	}
 }
-
-type Interners<'a> = (&'a NameInterner, &'a StringInterner);
 
 trait Repr {
 	fn repr(&self, i: &Interners) -> String;
@@ -286,6 +284,18 @@ impl Tree for TopLevel {
 				TopLevelDefinitionKind::Include(x)      => { builder.add_empty_child(format!("Include: {}", x.repr(i))); }
 			}
 		}
+	}
+}
+
+impl TopLevel {
+	pub fn repr(&self, interners: &Interners) -> String {
+		let mut builder = ptree::TreeBuilder::new("AST".to_string());
+		self.tree(interners, &mut builder);
+		let t = builder.build();
+		let mut cursor: std::io::Cursor<Vec<u8>> = std::io::Cursor::new(Vec::new());
+		ptree::write_tree(&t, &mut cursor).unwrap();
+		let data = cursor.into_inner();
+		std::str::from_utf8(&data).unwrap().to_string()
 	}
 }
 

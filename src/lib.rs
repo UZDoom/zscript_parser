@@ -2,29 +2,14 @@ pub mod tokenizer;
 pub mod parser;
 pub mod ast;
 pub mod err;
-
+pub mod filesystem;
+pub mod parser_manager;
 pub mod interner;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
 	start: usize,
 	end: usize
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct File {
-	pub(crate) filename: String,
-	pub(crate) text: String,
-	pub(crate) lines: Vec<std::ops::Range<usize>>,
-}
-
-impl File {
-	pub fn new(filename: String, text: String) -> Self {
-		let lines = get_lines(&text);
-		Self {
-			filename, text, lines
-		}
-	}
 }
 
 impl Span {
