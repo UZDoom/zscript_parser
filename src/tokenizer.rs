@@ -1,71 +1,18 @@
+use std::ops::Range;
+use core::str::CharIndices;
+
 use std::borrow::Cow;
-use regex::Regex;
-use lazy_static::lazy_static;
+use str_utils::*;
 
 use crate::Span;
 use crate::filesystem::FileIndex;
-use crate::err::ParsingError;
-use crate::err::FileSpans;
-
-macro_rules! define_token_rule {
-	($reg: expr => $s: ident, $c: ident, $action: expr) => {
-		|file: FileIndex, text: &'src str, remaining: &'src str| {
-			lazy_static! {
-				static ref RE: Regex = Regex::new(concat!("^(", $reg, ")")).unwrap();
-			}
-			let $c = RE.captures(remaining)?;
-			let $s = $c.get(0).unwrap().as_str();
-			let a: Result<TokenData, String> = $action;
-			let ret = match a {
-				Ok(data) => Ok(Token {
-					original: &remaining[..$c.get(0).unwrap().end()],
-					data
-				}),
-				Err(msg) => Err(ParsingError {
-					msg: String::from(msg),
-					file_spans: vec![
-						FileSpans {
-							file,
-							main_spans: vec1::vec1![span(&text, remaining)],
-							info_spans: vec![]
-						}
-					]
-				})
-			};
-			Some((
-				ret,
-				&remaining[$c.get(0).unwrap().end()..]
-			))
-		}
-	}
-}
-
-macro_rules! define_token_rule_func {
-	($rule: ident: $reg: literal => $s: ident, $c: ident, $action: expr) => {
-		fn $rule<'src>(file: FileIndex, text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
-			define_token_rule!($reg => $s, $c, $action)(file, text, remaining)
-		}
-	};
-}
-
-macro_rules! first_of {
-	($rules: expr) => {
-		|file, text, remaining| {
-			for r in $rules {
-				if let Some(t) = r(file, text, remaining) {
-					return Some(t);
-				}
-			}
-			None
-		}
-	}
-}
+use crate::err::{FileSpans, ParsingError};
 
 macro_rules! rule_grouping_type {
 	($name: ident, $reg_func: ident, $match_func: ident {
 		$( $rule: literal => $res: ident ),*
 	}) => {
-		#[derive(Debug, PartialEq)]
+		#[derive(Debug, PartialEq, Copy, Clone)]
 		pub enum $name {
 			$(
 				$res,
@@ -83,40 +30,8 @@ macro_rules! rule_grouping_type {
 		}
 
 		#[allow(unused)]
-		fn $reg_func<'src>(
-			file: FileIndex, text: &'src str, remaining: &'src str
-		) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
-			first_of!(&[
-				$(
-					|file, text, remaining| {
-						lazy_static! {
-							static ref RE: Regex = {
-								let mut rule = "^(".to_string();
-								rule.push_str(&regex::escape($rule));
-								rule.push_str(")");
-								Regex::new(&rule).unwrap()
-							};
-						}
-						let m = RE.find(remaining)?;
-						let data = TokenData::$name($name::$res);
-
-						let original = &remaining[..m.end()];
-						let new = &remaining[m.end()..];
-
-						Some((
-							Ok(Token {
-								original, data
-							}),
-							new
-						))
-					},
-				)*
-			])(file, text, remaining)
-		}
-
-		#[allow(unused)]
-		fn $match_func<'src>(remaining: &'src str) -> Option<$name> {
-			match &*remaining.to_lowercase() {
+		fn $match_func<'src>(r: &'src str) -> Option<$name> {
+			match &*r.to_lowercase() {
 				$(
 					$rule => Some($name::$res),
 				)*
@@ -132,11 +47,11 @@ pub struct Token<'src> {
 	pub data: TokenData<'src>
 }
 
-fn span(text: &str, original: &str) -> Span {
+fn span(text: &str, sub: &str) -> Span {
 	let text_ptr = text.as_ptr() as usize;
-	let self_ptr = original.as_ptr() as usize;
+	let self_ptr = sub.as_ptr() as usize;
 	let start = self_ptr - text_ptr;
-	let end = start + original.len();
+	let end = start + sub.len();
 	Span { start, end }
 }
 
@@ -238,88 +153,72 @@ rule_grouping_type!(Punctuation, punc, match_punc {
 	r"@"    => AtSign
 });
 
-fn states_punc<'src>(file: FileIndex, text: &'src str, remaining: &'src str) -> Option<(Result<Token<'src>, ParsingError>, &'src str)> {
-	first_of!(&[
-		define_token_rule!(r":"  => _s, c, Ok(TokenData::Punctuation(Punctuation::Colon))),
-		define_token_rule!(r";"  => _s, c, Ok(TokenData::Punctuation(Punctuation::Semicolon))),
-		define_token_rule!(r"\}" => _s, c, Ok(TokenData::Punctuation(Punctuation::RightCurly))),
-	])(file, text, remaining)
-}
-
 rule_grouping_type!(Keyword, keyword, match_keyword {
-	r#"break"#        => Break,
-	r#"case"#         => Case,
-	r#"const"#        => Const,
-	r#"continue"#     => Continue,
-	r#"default"#      => Default,
-	r#"do"#           => Do,
-	r#"else"#         => Else,
-	r#"for"#          => For,
-	r#"goto"#         => Goto,
-	r#"if"#           => If,
-	r#"return"#       => Return,
-	r#"switch"#       => Switch,
-	r#"until"#        => Until,
-	r#"volatile"#     => Volatile,
-	r#"while"#        => While,
+	"break"        => Break,
+	"case"         => Case,
+	"const"        => Const,
+	"continue"     => Continue,
+	"default"      => Default,
+	"do"           => Do,
+	"else"         => Else,
+	"for"          => For,
+	"goto"         => Goto,
+	"if"           => If,
+	"return"       => Return,
+	"switch"       => Switch,
+	"until"        => Until,
+	"volatile"     => Volatile,
+	"while"        => While,
 
-	r#"char"#         => Char,
-	r#"long"#         => Long,
-	r#"ulong"#        => ULong,
-	r#"struct"#       => Struct,
-	r#"class"#        => Class,
-	r#"mixin"#        => Mixin,
-	r#"enum"#         => Enum,
-	r#"in"#           => In,
-	r#"sizeof"#       => SizeOf,
-	r#"alignof"#      => AlignOf,
+	"char"         => Char,
+	"long"         => Long,
+	"ulong"        => ULong,
+	"struct"       => Struct,
+	"class"        => Class,
+	"mixin"        => Mixin,
+	"enum"         => Enum,
+	"in"           => In,
+	"sizeof"       => SizeOf,
+	"alignof"      => AlignOf,
 
-	r#"abstract"#     => Abstract,
-	r#"foreach"#      => ForEach,
-	r#"true"#         => True,
-	r#"false"#        => False,
-	r#"auto"#         => Auto,
-	r#"flagdef"#      => FlagDef,
-	r#"native"#       => Native,
-	r#"var"#          => Var,
-	r#"out"#          => Out,
-	r#"static"#       => Static,
-	r#"transient"#    => Transient,
-	r#"final"#        => Final,
-	r#"extend"#       => Extend,
-	r#"protected"#    => Protected,
-	r#"private"#      => Private,
-	r#"dot"#          => Dot,
-	r#"cross"#        => Cross,
-	r#"virtual"#      => Virtual,
-	r#"override"#     => Override,
-	r#"vararg"#       => VarArg,
-	r#"ui"#           => UI,
-	r#"play"#         => Play,
-	r#"clearscope"#   => ClearScope,
-	r#"virtualscope"# => VirtualScope,
-	r#"super"#        => Super,
-	r#"stop"#         => Stop,
-	r#"null"#         => Null,
+	"abstract"     => Abstract,
+	"foreach"      => ForEach,
+	"true"         => True,
+	"false"        => False,
+	"auto"         => Auto,
+	"flagdef"      => FlagDef,
+	"native"       => Native,
+	"var"          => Var,
+	"out"          => Out,
+	"static"       => Static,
+	"transient"    => Transient,
+	"final"        => Final,
+	"extend"       => Extend,
+	"protected"    => Protected,
+	"private"      => Private,
+	"dot"          => Dot,
+	"cross"        => Cross,
+	"virtual"      => Virtual,
+	"override"     => Override,
+	"vararg"       => VarArg,
+	"ui"           => UI,
+	"play"         => Play,
+	"clearscope"   => ClearScope,
+	"virtualscope" => VirtualScope,
+	"super"        => Super,
+	"stop"         => Stop,
+	"null"         => Null,
 
-	r#"is"#           => Is,
-	r#"replaces"#     => Replaces,
-	r#"states"#       => States,
-	r#"meta"#         => Meta,
-	r#"deprecated"#   => Deprecated,
-	r#"version"#      => Version,
-	r#"action"#       => Action,
-	r#"readonly"#     => ReadOnly,
-	r#"internal"#     => Internal,
-	r#"let"#          => Let
-});
-
-define_token_rule_func!(ident_or_keyword: r"[_a-zA-Z][_a-zA-Z0-9]*" => s, c, {
-	if let Some(k) = match_keyword(s) {
-		Ok(TokenData::Keyword(k))
-	} else {
-		Ok(TokenData::Identifier(s))
-	}
+	"is"           => Is,
+	"replaces"     => Replaces,
+	"states"       => States,
+	"meta"         => Meta,
+	"deprecated"   => Deprecated,
+	"version"      => Version,
+	"action"       => Action,
+	"readonly"     => ReadOnly,
+	"internal"     => Internal,
+	"let"          => Let
 });
 
 fn unescape<'src>(s: &'src str) -> Cow<'src, str> {
@@ -342,94 +241,12 @@ fn unescape<'src>(s: &'src str) -> Cow<'src, str> {
 	}
 }
 
-define_token_rule_func!(
-	name: r"'[^\n']*(?P<EndQuote>')?" => s, c, {
-		if c.name("EndQuote").is_some() {
-			Ok(TokenData::Name(&s[1..s.len() - 1]))
-		} else {
-			Err("unterminated name literal".to_string())
-		}
-	}
-);
-
-define_token_rule_func!(
-	string: r#""(\\"|[^"])*(?P<EndQuote>")?"# => s, c, {
-		if c.name("EndQuote").is_some() {
-			Ok(TokenData::String(unescape(&s[1..s.len() - 1])))
-		} else {
-			Err("unterminated string literal".to_string())
-		}
-	}
-);
-
-define_token_rule_func!(
-	int: r#"(?x)
-		(
-			(?P<Oct>0(?P<OctBody>[0-9]+))|
-			(?P<Hex>(0[xX])(?P<HexBody>[0-9a-fA-F]+))|
-			(?P<Dec>(?P<DecBody>[0-9]+))
-		)
-		(?P<Suff>[uUlL]{0,2})
-	"# => _s, c, {
-		let val = if c.name("Oct").is_some() {
-			u64::from_str_radix(c.name("OctBody").unwrap().as_str(), 8).unwrap()
-		} else if c.name("Hex").is_some() {
-			u64::from_str_radix(c.name("HexBody").unwrap().as_str(), 16).unwrap()
-		} else {
-			u64::from_str_radix(c.name("DecBody").unwrap().as_str(), 10).unwrap()
-		};
-		let long = c.name("Suff").map(|x| x.as_str().contains("l") | x.as_str().contains("L")).unwrap_or(false);
-		let unsigned = c.name("Suff").map(|x| x.as_str().contains("u") | x.as_str().contains("U")).unwrap_or(false);
-		Ok(TokenData::Int { val, long, unsigned })
-	}
-);
-
-define_token_rule_func!(
-	float: r#"(?x)
-		(?P<Body>
-			([0-9]+([eE][+-]?[0-9]+))          |
-			([0-9]*\.[0-9]+([eE][+-]?[0-9]+)?) |
-			([0-9]+\.[0-9]*([eE][+-]?[0-9]+)?)
-		)
-		(?P<Suff>[fF])?
-	"# => _s, c, {
-		let val = c.name("Body").unwrap().as_str().parse::<f64>().unwrap();
-		let double = !c.name("Suff").is_some();
-		Ok(TokenData::Float { val, double })
-	}
-);
-
-define_token_rule_func!(
-	include: r#"#include"# => _s, c, {
-		Ok(TokenData::Include)
-	}
-);
-
-define_token_rule_func!(
-	nws: r#"[^\u0000- /":;]*(/[^\u0000- /":;*][^\u0000- /":;]*)*"# => s, c, {
-		Ok(TokenData::NonWhitespace(Cow::from(s)))
-	}
-);
-
-
-fn skip_whitespace<'src>(remaining: &'src str) -> &'src str {
-	lazy_static! {
-		static ref RE: Regex = Regex::new(
-			r"^((#region.*\n)|(#endregion.*\n)|([\u0000- ]+)|(//.*\n)|(?s:/\*.*\*/))"
-		).unwrap();
-	}
-	let mut cur = remaining;
-	while let Some(s) = RE.shortest_match(cur) {
-		cur = &cur[s..]
-	}
-	cur
-}
-
 #[derive(Debug)]
 pub struct Tokenizer<'src> {
 	file: FileIndex,
 	text: &'src str,
-	remaining: &'src str,
+	current_range: Range<usize>,
+	remaining: CharIndices<'src>,
 	states_mode: bool,
 	peeked1: Option<Option<Token<'src>>>,
 	peeked2: Option<Option<Token<'src>>>
@@ -437,7 +254,11 @@ pub struct Tokenizer<'src> {
 
 impl<'src> Tokenizer<'src> {
 	pub fn new(file: FileIndex, text: &'src str) -> Self {
-		Self { file, text, remaining: text, states_mode: false, peeked1: None, peeked2: None }
+		Self {
+			file, text, current_range: 0..0,
+			remaining: text.char_indices(), states_mode: false,
+			peeked1: None, peeked2: None
+		}
 	}
 
 	pub fn set_states_mode(&mut self, mode: bool) {
@@ -445,40 +266,605 @@ impl<'src> Tokenizer<'src> {
 		self.states_mode = mode;
 	}
 
-	fn next_internal(&mut self) -> Option<Result<Token<'src>, ParsingError>> {
-		self.remaining = skip_whitespace(self.remaining);
-		if self.remaining.is_empty() { return None; }
+	fn reset(&mut self) {
+		match self.remaining.clone().nth(0) {
+		    Some((i, _)) => { self.current_range = i..i; }
+		    None         => { self.current_range = self.text.len()..self.text.len(); }
+		}
+	}
 
-		if self.states_mode {
-			let result = first_of!(
-				&[
-					string, states_punc, nws
-				]
-			)(self.file, self.text, self.remaining);
-			if let Some((token, new_remaining)) = result {
-				self.remaining = new_remaining;
-				Some(
-					if let Ok(Token { original, data: TokenData::String(s) }) = token {
-						Ok(Token {
-							original,
-							data: TokenData::NonWhitespace(s)
-						})
-					} else { token }
-				)
-			} else {
-				dbg!(self.remaining);
-				unimplemented!()
+	fn first(&self) -> Option<char> {
+		self.remaining.clone().nth(0).map(|(_, c)| c)
+	}
+	fn second(&self) -> Option<char> {
+		self.remaining.clone().nth(1).map(|(_, c)| c)
+	}
+
+	fn bump(&mut self) -> Option<char> {
+		let next = self.remaining.next();
+		let ret = match next {
+		    Some((_, c)) => {
+				self.current_range.end += c.len_utf8();
+				Some(c)
+			}
+		    None => {
+				self.current_range = self.current_range.start..self.text.len();
+				None
+			}
+		};
+		ret
+	}
+
+	fn ident_or_keyword(&mut self) -> Token<'src> {
+		loop {
+			match self.first() {
+				Some(c) if matches!(
+					c,
+					'a'..='z' | 'A'..='Z' | '0'..='9' | '_'
+				) => {
+					self.bump();
+				}
+				_ => {
+					let res = &self.text[self.current_range.clone()];
+					let data = if let Some(k) = match_keyword(res) {
+						TokenData::Keyword(k)
+					} else {
+						TokenData::Identifier(res)
+					};
+					break Token { original: res, data };
+				}
+			}
+		}
+	}
+
+	fn hex_digits(&mut self) {
+		loop {
+			match self.first() {
+				Some(c) if matches!(
+					c,
+					'0'..='9' | 'a'..='f' | 'A'..='F'
+				) => {
+					self.bump();
+				}
+				_ => { break; }
+			}
+		}
+	}
+	fn dec_digits(&mut self) -> bool {
+		let mut seen = false;
+		loop {
+			match self.first() {
+				Some(c) if matches!(
+					c,
+					'0'..='9'
+				) => {
+					self.bump();
+					seen = true;
+				}
+				_ => { break seen; }
+			}
+		}
+	}
+	fn exponent(&mut self) -> Result<(), ()> {
+		if matches!(self.first(), Some('e') | Some('E')) {
+			self.bump();
+			if matches!(self.first(), Some('+') | Some('-')) {
+				self.bump();
+			}
+			if !self.dec_digits() {
+				Err(())
+			} else { Ok(()) }
+		} else { Ok(()) }
+	}
+	fn float_suffix(&mut self) -> bool {
+		if matches!(self.first(), Some('f') | Some('F')) {
+			self.bump();
+			false
+		} else { true }
+	}
+	fn int_suffix(&mut self) -> (bool, bool) {
+		let mut long = false;
+		let mut unsigned = false;
+		for _ in 0..2 {
+			if matches!(self.first(), Some('l') | Some('L') | Some('u') | Some('U')) {
+				if matches!(self.first(), Some('l') | Some('L')) { long = true; }
+				if matches!(self.first(), Some('u') | Some('U')) { unsigned = true; }
+				self.bump();
+			}
+		}
+		(long, unsigned)
+	}
+
+	fn number(&mut self, errs: &mut Vec<ParsingError>, first: char) -> Token<'src> {
+		if first == '0' {
+			if let Some('x') = self.first() {
+				self.bump();
+				self.hex_digits();
+				let val = u64::from_str_radix(
+					&self.text[self.current_range.start + 2..self.current_range.end], 16
+				).unwrap_or(u64::max_value());
+				let (long, unsigned) = self.int_suffix();
+				let res = &self.text[self.current_range.clone()];
+				let data = TokenData::Int { val, long, unsigned };
+				return Token {
+					original: res,
+					data
+				};
+			}
+		}
+		let mut float = first == '.';
+		self.dec_digits();
+		if !float && matches!(self.first(), Some('.')) {
+			self.bump();
+			float = true;
+			self.dec_digits();
+		}
+		if matches!(self.first(), Some('e') | Some('E')) {
+			float = true;
+		}
+		if float {
+			let (val, double) = match self.exponent() {
+				Ok(()) => {
+					let val = self.text[self.current_range.clone()]
+						.parse::<f64>().unwrap_or(f64::INFINITY);
+					let double = self.float_suffix();
+					(val, double)
+				}
+				Err(()) => {
+					let double = self.float_suffix();
+					let s = &self.text[self.current_range.clone()];
+					let err = ParsingError {
+						msg: "expected at least one digit in exponent".to_string(),
+						file_spans: vec![
+							FileSpans {
+								file: self.file,
+								main_spans: vec1::vec1![span(self.text, s)],
+								info_spans: vec![]
+							}
+						]
+					};
+					errs.push(err);
+					(0.0, double)
+				}
+			};
+			let res = &self.text[self.current_range.clone()];
+			let data = TokenData::Float { val, double };
+			Token {
+				original: res,
+				data
 			}
 		} else {
-			let result = first_of!(
-				&[include, ident_or_keyword, name, string, float, int, punc]
-			)(self.file, self.text, self.remaining);
-			if let Some((token, new_remaining)) = result {
-				self.remaining = new_remaining;
-				Some(token)
+			if first == '0' {
+				// this intentionally emulates ZScript's broken grammar rule for octal literals
+				let s = &self.text[self.current_range.clone()];
+				let i = s.find(|c: char| !('0'..='7').contains(&c)).unwrap_or(s.len());
+				let s = &s[..i];
+				let val = u64::from_str_radix(s, 8).unwrap_or(u64::max_value());
+
+				let (long, unsigned) = self.int_suffix();
+				let res = &self.text[self.current_range.clone()];
+				let data = TokenData::Int { val, long, unsigned };
+				Token {
+					original: res,
+					data
+				}
 			} else {
-				dbg!(self.remaining);
-				unimplemented!()
+				let val = u64::from_str_radix(
+					&self.text[self.current_range.clone()], 10
+				).unwrap_or(u64::max_value());
+				let (long, unsigned) = self.int_suffix();
+				let res = &self.text[self.current_range.clone()];
+				let data = TokenData::Int { val, long, unsigned };
+				Token {
+					original: res,
+					data
+				}
+			}
+		}
+	}
+
+	fn punc_glue(&mut self, punc: Punctuation) -> Option<Punctuation> {
+		use Punctuation::*;
+		let first = self.first()?;
+		let ret = match (punc, first) {
+			(UnsignedRightShift, '=') => UnsignedRightShiftAssign,
+
+			(RightShift, '>') => UnsignedRightShift,
+			(RightShift, '=') => RightShiftAssign,
+			(LeftShift,  '=') => LeftShiftAssign,
+			(DotDot,     '.') => Ellipsis,
+
+			(Dot,         '.') => DotDot,
+			(Plus,        '=') => PlusAssign,
+			(Minus,       '=') => MinusAssign,
+			(Times,       '=') => TimesAssign,
+			(Divide,      '=') => DivideAssign,
+			(Modulo,      '=') => ModuloAssign,
+			(BitwiseAnd,  '=') => BitwiseAndAssign,
+			(BitwiseXor,  '=') => BitwiseXorAssign,
+			(BitwiseOr,   '=') => BitwiseOrAssign,
+			(RightAngle,  '>') => RightShift,
+			(LeftAngle,   '<') => LeftShift,
+			(Assign,      '=') => Equals,
+			(LogicalNot,  '=') => NotEquals,
+			(RightAngle,  '=') => GreaterThanEquals,
+			(LeftAngle,   '=') => LessThanEquals,
+			(BitwiseAnd,  '&') => LogicalAnd,
+			(BitwiseOr,   '|') => LogicalOr,
+			(Plus,        '+') => Increment,
+			(Minus,       '-') => Decrement,
+			(Colon,       ':') => DoubleColon,
+			(Minus,       '>') => Arrow,
+			(Times,       '*') => Raise,
+			
+			_ => {
+				let second = self.second()?;
+				let ret = match (punc, first, second) {
+					(BitwiseNot, '=', '=') => ApproxEquals,
+					(LeftAngle,  '>', '=') => ThreeWayComp,
+					_ => { return None; }
+				};
+				self.bump();
+				self.bump();
+				return Some(ret);
+			}
+		};
+		self.bump();
+		Some(ret)
+	}
+
+	fn punc(&mut self, first: Punctuation, glue: bool) -> Token<'src> {
+		let mut ret = first;
+		if glue {
+			while let Some(p) = self.punc_glue(ret) {
+				ret = p;
+			}
+		}
+		let res = &self.text[self.current_range.clone()];
+		let data = TokenData::Punctuation(ret);
+		Token {
+			original: res,
+			data
+		}
+	}
+
+	fn name(&mut self, errs: &mut Vec<ParsingError>) -> Token<'src> {
+		loop {
+			match self.first() {
+				Some('\'') => {
+					self.bump();
+					let res = &self.text[self.current_range.clone()];
+					let data = TokenData::Name(
+						&self.text[self.current_range.start + 1..self.current_range.end - 1]
+					);
+					break Token {
+						original: res,
+						data
+					};
+				}
+				Some('\n') | None => {
+					let res = &self.text[self.current_range.clone()];
+					let err = ParsingError {
+						msg: "unterminated name constant".to_string(),
+						file_spans: vec![
+							FileSpans {
+								file: self.file,
+								main_spans: vec1::vec1![span(self.text, res)],
+								info_spans: vec![]
+							}
+						]
+					};
+					errs.push(err);
+					let data = TokenData::Name(
+						&self.text[self.current_range.start + 1..self.current_range.end]
+					);
+					self.bump();
+					break Token {
+						original: res,
+						data
+					};
+				}
+				_ => { self.bump(); }
+			}
+		}
+	}
+
+	fn string(&mut self, errs: &mut Vec<ParsingError>) -> Token<'src> {
+		let mut needs_unescape = false;
+		loop {
+			match self.first() {
+				Some('\"') => {
+					self.bump();
+					let res = &self.text[self.current_range.clone()];
+					let s = &self.text[self.current_range.start + 1..self.current_range.end - 1];
+					let data = TokenData::String(
+						if needs_unescape { unescape(s) } else { Cow::from(s) }
+					);
+					break Token {
+						original: res,
+						data
+					};
+				}
+				Some('\\') => {
+					self.bump();
+					if matches!(self.first(), Some('\"')) { self.bump(); }
+					needs_unescape = true;
+				}
+				None => {
+					self.bump();
+					let res = &self.text[self.current_range.clone()];
+					let err = ParsingError {
+						msg: "unterminated string constant".to_string(),
+						file_spans: vec![
+							FileSpans {
+								file: self.file,
+								main_spans: vec1::vec1![span(self.text, res)],
+								info_spans: vec![]
+							}
+						]
+					};
+					errs.push(err);
+					let s = &self.text[self.current_range.start + 1..self.current_range.end - 1];
+					let data = TokenData::String(
+						if needs_unescape { unescape(s) } else { Cow::from(s) }
+					);
+					break Token {
+						original: res,
+						data
+					};
+				}
+				_ => { self.bump(); }
+			}
+		}
+	}
+
+	fn matches_nws(&mut self) -> bool {
+		match self.first() {
+			Some('/') if matches!(
+				self.second(),
+				Some('\u{0001}'..=' ') | Some('"') | Some(':') | Some(';') |
+				Some('}') | Some('*') | Some('/') | None
+			) => { false }
+			Some('\u{0001}'..=' ') | Some('"') | Some(':') | Some(';') | Some('}') | None => {
+				false
+			}
+			_ => { true }
+		}
+	}
+
+	fn nws(&mut self) -> Token<'src> {
+		loop {
+			if self.matches_nws() {
+				self.bump();
+			} else {
+				let res = &self.text[self.current_range.clone()];
+				let data = TokenData::NonWhitespace(
+					Cow::from(&self.text[self.current_range.clone()])
+				);
+				break Token {
+					original: res,
+					data
+				};
+			}
+		}
+	}
+
+	fn line_comment(&mut self) {
+		loop {
+			match self.bump() {
+				Some('\n') | None => { break; }
+				_ => {}
+			}
+		}
+	}
+
+	fn block_comment(&mut self, errs: &mut Vec<ParsingError>) {
+		loop {
+			match self.bump() {
+				Some('*') => {
+					if matches!(self.first(), Some('/')) {
+						self.bump();
+						break;
+					}
+				}
+				None => {
+					let res = &self.text[self.current_range.clone()];
+					let err = ParsingError {
+						msg: "unterminated block comment".to_string(),
+						file_spans: vec![
+							FileSpans {
+								file: self.file,
+								main_spans: vec1::vec1![span(self.text, res)],
+								info_spans: vec![]
+							}
+						]
+					};
+					errs.push(err);
+					break;
+				}
+				_ => {}
+			}
+		}
+	}
+
+	fn invalid_start(&self, errs: &mut Vec<ParsingError>) {
+		let s = &self.text[self.current_range.clone()];
+		let c = s.chars().nth(0).unwrap();
+		let err = ParsingError {
+			msg: format!("unknown token start U+{:04X}", c as u32),
+			file_spans: vec![
+				FileSpans {
+					file: self.file,
+					main_spans: vec1::vec1![span(self.text, s)],
+					info_spans: vec![]
+				}
+			]
+		};
+		errs.push(err);
+	}
+
+	fn next_internal(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
+		if self.states_mode {
+			'outer_states: loop {
+				self.reset();
+				let start = self.bump()?;
+				break Some(match start {
+					'\u{0001}'..=' ' => { continue; }
+					'#' => {
+						if self.remaining.as_str().starts_with_ignore_ascii_case("region") {
+							self.current_range.end += "region".len();
+							self.remaining.nth("region".len());
+							loop {
+								match self.bump() {
+									Some('\n') | None => { continue 'outer_states; }
+									_ => {}
+								}
+							}
+						} else if self.remaining.as_str().starts_with_ignore_ascii_case("endregion") {
+							self.current_range.end += "endregion".len();
+							self.remaining.nth("endregion".len());
+							loop {
+								match self.bump() {
+									Some('\n') | None => { continue 'outer_states; }
+									_ => {}
+								}
+							}
+						} else {
+							self.nws()
+						}
+					},
+					'/' => {
+						if matches!(self.first(), Some('/')) {
+							self.bump();
+							self.line_comment();
+							continue 'outer_states;
+						} else if matches!(self.first(), Some('*')) {
+							self.bump();
+							self.block_comment(errs);
+							continue 'outer_states;
+						} else if self.matches_nws() {
+							self.nws()
+						} else {
+							self.invalid_start(errs);
+							continue 'outer_states;
+						}
+					}
+					'}' => self.punc(Punctuation::RightCurly, false),
+					':' => self.punc(Punctuation::Colon, false),
+					';' => self.punc(Punctuation::Semicolon, false),
+
+					'\"' => {
+						if let Token { original, data: TokenData::String(s) } = self.string(errs) {
+							Token { original, data: TokenData::NonWhitespace(s) }
+						} else { unreachable!() }
+					},
+
+					c if !matches!(
+						c,
+						'\u{0001}'..=' ' | '"' | ':' | ';' | '}'
+					) => {
+						self.nws()
+					}
+
+					_ => {
+						self.invalid_start(errs);
+						continue 'outer_states;
+					}
+				});
+			}
+		} else {
+			'outer: loop {
+				self.reset();
+				let start = self.bump()?;
+				break Some(match start {
+					'\u{0001}'..=' ' => { continue 'outer; }
+					'a'..='z' | 'A'..='Z' | '_' => {
+						self.ident_or_keyword()
+					}
+					'0'..='9' => {
+						self.number(errs, start)
+					}
+					'#' => {
+						if self.remaining.as_str().starts_with_ignore_ascii_case("include") {
+							self.current_range.end += "include".len();
+							self.remaining.nth("include".len());
+							let res = &self.text[self.current_range.clone()];
+							let data = TokenData::Include;
+							Token { original: res, data }
+						} else if self.remaining.as_str().starts_with_ignore_ascii_case("region") {
+							self.current_range.end += "region".len();
+							self.remaining.nth("region".len());
+							loop {
+								match self.bump() {
+									Some('\n') | None => { continue 'outer; }
+									_ => {}
+								}
+							}
+						} else if self.remaining.as_str().starts_with_ignore_ascii_case("endregion") {
+							self.current_range.end += "endregion".len();
+							self.remaining.nth("endregion".len());
+							loop {
+								match self.bump() {
+									Some('\n') | None => { continue 'outer; }
+									_ => {}
+								}
+							}
+						} else {
+							self.punc(Punctuation::Hash, true)
+						}
+					},
+					'.' => {
+						if matches!(self.first(), Some('0'..='9')) {
+							self.number(errs, start)
+						} else {
+							self.punc(Punctuation::Dot, true)
+						}
+					}
+					'/' => {
+						if matches!(self.first(), Some('/')) {
+							self.bump();
+							self.line_comment();
+							continue 'outer;
+						} else if matches!(self.first(), Some('*')) {
+							self.bump();
+							self.block_comment(errs);
+							continue 'outer;
+						} else {
+							self.punc(Punctuation::Divide, true)
+						}
+					}
+					'+' => self.punc(Punctuation::Plus, true),
+					'-' => self.punc(Punctuation::Minus, true),
+					'*' => self.punc(Punctuation::Times, true),
+					'%' => self.punc(Punctuation::Modulo, true),
+					'&' => self.punc(Punctuation::BitwiseAnd, true),
+					'^' => self.punc(Punctuation::BitwiseXor, true),
+					'|' => self.punc(Punctuation::BitwiseOr, true),
+					'~' => self.punc(Punctuation::BitwiseNot, true),
+					'!' => self.punc(Punctuation::LogicalNot, true),
+					'(' => self.punc(Punctuation::LeftRound, true),
+					')' => self.punc(Punctuation::RightRound, true),
+					'[' => self.punc(Punctuation::LeftSquare, true),
+					']' => self.punc(Punctuation::RightSquare, true),
+					'{' => self.punc(Punctuation::LeftCurly, true),
+					'}' => self.punc(Punctuation::RightCurly, true),
+					'<' => self.punc(Punctuation::LeftAngle, true),
+					'>' => self.punc(Punctuation::RightAngle, true),
+					'=' => self.punc(Punctuation::Assign, true),
+					':' => self.punc(Punctuation::Colon, true),
+					';' => self.punc(Punctuation::Semicolon, true),
+					',' => self.punc(Punctuation::Comma, true),
+					'?' => self.punc(Punctuation::QuestionMark, true),
+					'@' => self.punc(Punctuation::AtSign, true),
+
+					'\'' => self.name(errs),
+					'\"' => self.string(errs),
+
+					_ => {
+						self.invalid_start(errs);
+						continue 'outer;
+					}
+				});
 			}
 		}
 	}
@@ -489,14 +875,7 @@ impl<'src> Tokenizer<'src> {
 			self.peeked1 = self.peeked2.take();
 			return ret;
 		}
-		loop {
-			let tok = self.next_internal();
-			if let Some(Err(e)) = tok {
-				errs.push(e);
-				continue;
-			}
-			return tok.map(|x| x.unwrap());
-		}
+		self.next_internal(errs)
 	}
 
 	pub fn peek(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
@@ -531,160 +910,6 @@ mod test {
 	use super::*;
 
 	fn dummy_file() -> FileIndex { FileIndex(0) }
-
-	#[test]
-	fn test_ident() {
-		let s = r"_something5 hi";
-		let (tok, rest) = ident_or_keyword(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: "_something5",
-				data: TokenData::Identifier("_something5")
-			}
-		);
-		assert_eq!(rest, " hi");
-	}
-
-	#[test]
-	fn test_name() {
-		let s = r"'Hello \n hi me!' crazy";
-		let (tok, rest) = name(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r"'Hello \n hi me!'",
-				data: TokenData::Name(r"Hello \n hi me!")
-			}
-		);
-		assert_eq!(rest, " crazy");
-
-		let s = r"'Hello \n hi' me!' crazy";
-		let (tok, rest) = name(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r"'Hello \n hi'",
-				data: TokenData::Name(r"Hello \n hi")
-			}
-		);
-		assert_eq!(rest, " me!' crazy");
-
-		let s = "'Hello \\n hi me!\n crazy";
-		let (tok, rest) = name(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap_err(),
-			ParsingError {
-				msg: "unterminated name literal".to_string(),
-				file_spans: vec![
-					FileSpans {
-						file: dummy_file(),
-						main_spans: vec1::vec1![Span { start: 0, end: s.len() }],
-						info_spans: vec![],
-					}
-				]
-			}
-		);
-		assert_eq!(rest, "\n crazy");
-	}
-
-	#[test]
-	fn test_string() {
-		let s = r#""Hello \" ' hi me!" crazy"#;
-		let (tok, rest) = string(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r#""Hello \" ' hi me!""#,
-				data: TokenData::String(Cow::from(r#"Hello " ' hi me!"#))
-			}
-		);
-		assert_eq!(rest, " crazy");
-
-		let s = concat!(r#""Hello \" "#, "\n", r#"' hi me!" crazy"#);
-		let (tok, rest) = string(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: concat!(r#""Hello \" "#, "\n", r#"' hi me!""#),
-				data: TokenData::String(Cow::from(concat!(r#"Hello " "#, "\n", r#"' hi me!"#)))
-			}
-		);
-		assert_eq!(rest, " crazy");
-
-		let s = r#""Hello \" ' hi me! crazy"#;
-		let (tok, rest) = string(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap_err(),
-			ParsingError {
-				msg: "unterminated string literal".to_string(),
-				file_spans: vec![
-					FileSpans {
-						file: dummy_file(),
-						main_spans: vec1::vec1![Span { start: 0, end: s.len() }],
-						info_spans: vec![],
-					}
-				]
-			}
-		);
-		assert_eq!(rest, "");
-	}
-
-	#[test]
-	fn test_int() {
-		let s = r#"0x45A2u some other stuff"#;
-		let (tok, rest) = int(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r#"0x45A2u"#,
-				data: TokenData::Int { val: 0x45A2, long: false, unsigned: true }
-			}
-		);
-		assert_eq!(rest, " some other stuff");
-	}
-
-	#[test]
-	fn test_float() {
-		let s = r#".245e-42f some other stuff"#;
-		let (tok, rest) = float(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r#".245e-42f"#,
-				data: TokenData::Float { val: 0.245e-42, double: false }
-			}
-		);
-		assert_eq!(rest, " some other stuff");
-	}
-
-	#[test]
-	fn test_nws() {
-		let s = r#"Test#24[/]#£2" other things"#;
-		let (tok, rest) = nws(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r#"Test#24[/]#£2"#,
-				data: TokenData::NonWhitespace(Cow::from(r#"Test#24[/]#£2"#))
-			}
-		);
-		assert_eq!(rest, r#"" other things"#);
-	}
-
-	#[test]
-	fn test_punc() {
-		let s = r#">>= hi"#;
-		let (tok, rest) = punc(dummy_file(), s, s).unwrap();
-		assert_eq!(
-			tok.unwrap(),
-			Token {
-				original: r#">>="#,
-				data: TokenData::Punctuation(Punctuation::RightShiftAssign)
-			}
-		);
-		assert_eq!(rest, " hi");
-	}
 
 	#[test]
 	fn test_tokenizer() {
@@ -766,7 +991,9 @@ mod test {
 
 	#[test]
 	fn test_tokenizer_states() {
-		let s = r#"HI#24 AA##A ; "Hello\t...""#;
+		let s = r#"HI#24 AA##A /A; A// comment
+		A/B/* comment again */
+		"Hello\t...""#;
 		let mut tok = Tokenizer::new(dummy_file(), s);
 		tok.set_states_mode(true);
 		let mut errs = vec![];
@@ -787,8 +1014,29 @@ mod test {
 		assert_eq!(
 			tok.next(&mut errs).unwrap(),
 			Token {
+				original: r#"/A"#,
+				data: TokenData::NonWhitespace(Cow::from("/A"))
+			}
+		);
+		assert_eq!(
+			tok.next(&mut errs).unwrap(),
+			Token {
 				original: r#";"#,
 				data: TokenData::Punctuation(Punctuation::Semicolon)
+			}
+		);
+		assert_eq!(
+			tok.next(&mut errs).unwrap(),
+			Token {
+				original: r#"A"#,
+				data: TokenData::NonWhitespace(Cow::from("A"))
+			}
+		);
+		assert_eq!(
+			tok.next(&mut errs).unwrap(),
+			Token {
+				original: r#"A/B"#,
+				data: TokenData::NonWhitespace(Cow::from("A/B"))
 			}
 		);
 		assert_eq!(

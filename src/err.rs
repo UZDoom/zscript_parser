@@ -2,6 +2,8 @@ use vec1::Vec1;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
+use unicode_width::UnicodeWidthChar;
+
 use crate::Span;
 use crate::filesystem::Files;
 use crate::filesystem::FileIndex;
@@ -118,7 +120,7 @@ impl ParsingErrorLines {
 						2 => "^",
 						1 => "-",
 						_ => " "
-					}.repeat(if c == '\t' { 4 } else { 1 });
+					}.repeat(if c == '\t' { 4 } else { UnicodeWidthChar::width(c).unwrap_or(1) });
 				}
 				ret += match p[p.len() - 1] {
 					2 => "^",
