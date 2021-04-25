@@ -1,7 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use regex::Regex;
-use lazy_static::*;
 use vec1::{Vec1, vec1};
 
 use crate::*;
@@ -450,27 +448,50 @@ impl<'src> Parser<'src> {
 		}
 	}
 
+	fn parse_lump_version(s: &str) -> Option<VersionInfo> {
+		let mut s = s;
+		fn split_once_inclusive(s: &str, p: impl Fn(char) -> bool) -> (&str, &str) {
+			let mut splitter = s.splitn(2, p);
+			let first = splitter.next().unwrap();
+			let second = &s[first.len()..];
+			(first, second)
+		}
+
+		s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
+		let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
+		s = s1;
+		let major = s0.parse::<u16>().ok()?;
+		if s.chars().nth(0) != Some('.') { return None; }
+		s = &s[1..];
+
+		s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
+		let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
+		s = s1;
+		let minor = s0.parse::<u16>().ok()?;
+
+		let revision = if s.chars().nth(0) == Some('.') {
+			s = &s[1..];
+			s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
+			let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
+			s = s1;
+			s0.parse::<u16>().ok()?
+		} else { 0 };
+
+		if s.chars().nth(0) != None { return None; }
+
+		Some(VersionInfo::new(major, minor, revision))
+	}
+
 	fn get_lump_version(&mut self) -> Result<Option<VersionInfo>, ParsingError> {
 		if self.get_keyword(&[Keyword::Version][..]).is_some() {
 			let ex = self.get_string();
 			let s = self.expect(ex, "string literal")?;
-			lazy_static! {
-				static ref RE: Regex = Regex::new(
-					r"^(?P<Major>[0-9]+)\. *(?P<Minor>[0-9]+)(\. *(?P<Revision>[0-9]+))?$"
-				).unwrap();
-			}
 			let l = self.string_interner.read().unwrap();
-			let lump_str = l.string(s.symbol);
-			let c = RE.captures(lump_str);
-			if let Some(c) = c {
-				// TODO: once int_error_matching is stabilized, redo this
-				let major = u16::from_str_radix(c.name("Major").unwrap().as_str(), 10).unwrap_or(0);
-				let minor = u16::from_str_radix(c.name("Minor").unwrap().as_str(), 10).unwrap_or(0);
-				let revision = u16::from_str_radix(c.name("Revision").map(|x| x.as_str()).unwrap_or("0"), 10).unwrap_or(0);
+			let ver_str = l.string(s.symbol);
 
-				Ok(Some(VersionInfo::new(major, minor, revision)))
-			} else {
-				Err(ParsingError {
+			match Parser::parse_lump_version(ver_str) {
+				Some(v) => Ok(Some(v)),
+				None => Err(ParsingError {
 					msg: "invalid version directive".to_string(),
 					file_spans: vec![
 						FileSpans {
