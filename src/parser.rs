@@ -2351,12 +2351,17 @@ impl<'src> Parser<'src> {
 				) {
 					let s = id.symbol;
 
-					if      s == intern(&self.name_interner, "bright")   { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Bright   }); }
-					else if s == intern(&self.name_interner, "fast")     { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Fast     }); }
-					else if s == intern(&self.name_interner, "slow")     { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Slow     }); }
-					else if s == intern(&self.name_interner, "nodelay")  { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::NoDelay  }); }
-					else if s == intern(&self.name_interner, "canraise") { metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::CanRaise }); }
-					else if s == intern(&self.name_interner, "offset")   {
+					if s == intern(&self.name_interner, "bright") {
+						metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Bright });
+					} else if s == intern(&self.name_interner, "fast") {
+						metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Fast });
+					} else if s == intern(&self.name_interner, "slow") {
+						metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::Slow });
+					} else if s == intern(&self.name_interner, "nodelay") {
+						metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::NoDelay });
+					} else if s == intern(&self.name_interner, "canraise") {
+						metadata.push(StateLineMetadataItem { span: id.span, kind: StateLineMetadataItemKind::CanRaise });
+					} else if s == intern(&self.name_interner, "offset")   {
 						let ex = self.get_punc(&[Punctuation::LeftRound]);
 						self.expect(ex, "`(`")?;
 
@@ -2373,8 +2378,7 @@ impl<'src> Parser<'src> {
 						let (_, s1) = self.expect(ex, "`)`")?;
 
 						metadata.push(StateLineMetadataItem { span: id.span.combine(s1), kind: StateLineMetadataItemKind::Offset(expr0, expr1) });
-					}
-					else if s == intern(&self.name_interner, "light") {
+					} else if s == intern(&self.name_interner, "light") {
 						let ex = self.get_punc(&[Punctuation::LeftRound]);
 						self.expect(ex, "`(`")?;
 

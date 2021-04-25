@@ -44,6 +44,7 @@ macro_rules! rule_grouping_type {
 #[derive(Debug, PartialEq)]
 pub struct Token<'src> {
 	pub original: &'src str,
+	pub doc_string: String,
 	pub data: TokenData<'src>
 }
 
@@ -246,6 +247,7 @@ pub struct Tokenizer<'src> {
 	file: FileIndex,
 	text: &'src str,
 	current_range: Range<usize>,
+	cur_doc_string: String,
 	remaining: CharIndices<'src>,
 	states_mode: bool,
 	peeked1: Option<Option<Token<'src>>>,
@@ -256,6 +258,7 @@ impl<'src> Tokenizer<'src> {
 	pub fn new(file: FileIndex, text: &'src str) -> Self {
 		Self {
 			file, text, current_range: 0..0,
+			cur_doc_string: "".to_string(),
 			remaining: text.char_indices(), states_mode: false,
 			peeked1: None, peeked2: None
 		}
@@ -311,7 +314,7 @@ impl<'src> Tokenizer<'src> {
 					} else {
 						TokenData::Identifier(res)
 					};
-					break Token { original: res, data };
+					break Token { original: res, doc_string: self.doc_string(), data };
 				}
 			}
 		}
@@ -388,6 +391,7 @@ impl<'src> Tokenizer<'src> {
 				let data = TokenData::Int { val, long, unsigned };
 				return Token {
 					original: res,
+					doc_string: self.doc_string(),
 					data
 				};
 			}
@@ -431,6 +435,7 @@ impl<'src> Tokenizer<'src> {
 			let data = TokenData::Float { val, double };
 			Token {
 				original: res,
+				doc_string: self.doc_string(),
 				data
 			}
 		} else {
@@ -446,6 +451,7 @@ impl<'src> Tokenizer<'src> {
 				let data = TokenData::Int { val, long, unsigned };
 				Token {
 					original: res,
+					doc_string: self.doc_string(),
 					data
 				}
 			} else {
@@ -457,6 +463,7 @@ impl<'src> Tokenizer<'src> {
 				let data = TokenData::Int { val, long, unsigned };
 				Token {
 					original: res,
+					doc_string: self.doc_string(),
 					data
 				}
 			}
@@ -524,6 +531,7 @@ impl<'src> Tokenizer<'src> {
 		let data = TokenData::Punctuation(ret);
 		Token {
 			original: res,
+			doc_string: self.doc_string(),
 			data
 		}
 	}
@@ -539,6 +547,7 @@ impl<'src> Tokenizer<'src> {
 					);
 					break Token {
 						original: res,
+						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -561,6 +570,7 @@ impl<'src> Tokenizer<'src> {
 					self.bump();
 					break Token {
 						original: res,
+						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -582,6 +592,7 @@ impl<'src> Tokenizer<'src> {
 					);
 					break Token {
 						original: res,
+						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -610,6 +621,7 @@ impl<'src> Tokenizer<'src> {
 					);
 					break Token {
 						original: res,
+						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -643,6 +655,7 @@ impl<'src> Tokenizer<'src> {
 				);
 				break Token {
 					original: res,
+					doc_string: self.doc_string(),
 					data
 				};
 			}
@@ -703,6 +716,10 @@ impl<'src> Tokenizer<'src> {
 		errs.push(err);
 	}
 
+	fn doc_string(&mut self) -> String {
+		std::mem::take(&mut self.cur_doc_string)
+	}
+
 	fn next_internal(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
 		if self.states_mode {
 			'outer_states: loop {
@@ -754,8 +771,8 @@ impl<'src> Tokenizer<'src> {
 					';' => self.punc(Punctuation::Semicolon, false),
 
 					'\"' => {
-						if let Token { original, data: TokenData::String(s) } = self.string(errs) {
-							Token { original, data: TokenData::NonWhitespace(s) }
+						if let Token { original, doc_string, data: TokenData::String(s) } = self.string(errs) {
+							Token { original, doc_string, data: TokenData::NonWhitespace(s) }
 						} else { unreachable!() }
 					},
 
@@ -790,7 +807,7 @@ impl<'src> Tokenizer<'src> {
 							self.remaining.nth("include".len());
 							let res = &self.text[self.current_range.clone()];
 							let data = TokenData::Include;
-							Token { original: res, data }
+							Token { original: res, doc_string: self.doc_string(), data }
 						} else if self.remaining.as_str().starts_with_ignore_ascii_case("region") {
 							self.current_range.end += "region".len();
 							self.remaining.nth("region".len());
@@ -927,6 +944,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: "something",
+				doc_string: "".to_string(),
 				data: TokenData::Identifier("something")
 			}
 		);
@@ -934,6 +952,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: "_s",
+				doc_string: "".to_string(),
 				data: TokenData::Identifier("_s")
 			}
 		);
@@ -941,6 +960,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#""Hi!""#,
+				doc_string: "".to_string(),
 				data: TokenData::String(Cow::from("Hi!"))
 			}
 		);
@@ -948,6 +968,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"'Hello...'"#,
+				doc_string: "".to_string(),
 				data: TokenData::Name("Hello...")
 			}
 		);
@@ -955,6 +976,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"424l"#,
+				doc_string: "".to_string(),
 				data: TokenData::Int { val: 424, long: true, unsigned: false } 
 			}
 		);
@@ -962,6 +984,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"+="#,
+				doc_string: "".to_string(),
 				data: TokenData::Punctuation(Punctuation::PlusAssign)
 			}
 		);
@@ -969,6 +992,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"0x7453"#,
+				doc_string: "".to_string(),
 				data: TokenData::Int { val: 0x7453, long: false, unsigned: false } 
 			}
 		);
@@ -976,6 +1000,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"0.42"#,
+				doc_string: "".to_string(),
 				data: TokenData::Float { val: 0.42, double: true } 
 			}
 		);
@@ -983,6 +1008,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"@"#,
+				doc_string: "".to_string(),
 				data: TokenData::Punctuation(Punctuation::AtSign)
 			}
 		);
@@ -1001,6 +1027,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"HI#24"#,
+				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("HI#24"))
 			}
 		);
@@ -1008,6 +1035,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"AA##A"#,
+				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("AA##A"))
 			}
 		);
@@ -1015,6 +1043,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"/A"#,
+				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("/A"))
 			}
 		);
@@ -1022,6 +1051,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#";"#,
+				doc_string: "".to_string(),
 				data: TokenData::Punctuation(Punctuation::Semicolon)
 			}
 		);
@@ -1029,6 +1059,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"A"#,
+				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("A"))
 			}
 		);
@@ -1036,6 +1067,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#"A/B"#,
+				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("A/B"))
 			}
 		);
@@ -1043,6 +1075,7 @@ mod test {
 			tok.next(&mut errs).unwrap(),
 			Token {
 				original: r#""Hello\t...""#,
+				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("Hello\t..."))
 			}
 		);
