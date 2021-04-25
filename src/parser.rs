@@ -255,7 +255,6 @@ impl<'src> Parser<'src> {
 		self.errs.push(e);
 	}
 
-	#[inline(always)]
 	fn get_keyword(&mut self, keywords: &[Keyword]) -> Option<(Keyword, Span)> {
 		if let Some(Token { data: TokenData::Keyword(k), .. }) = self.tokenizer.peek(&mut self.errs) {
 			for key in keywords {
@@ -272,7 +271,6 @@ impl<'src> Parser<'src> {
 			None
 		}
 	}
-	#[inline(always)]
 	fn get_punc(&mut self, puncs: &[Punctuation]) -> Option<(Punctuation, Span)> {
 		if let Some(Token { data: TokenData::Punctuation(p), .. }) = self.tokenizer.peek(&mut self.errs) {
 			for punc in puncs {
@@ -289,7 +287,6 @@ impl<'src> Parser<'src> {
 			None
 		}
 	}
-	#[inline(always)]
 	fn get_specific_ident(&mut self, idents: &[&str]) -> Option<Identifier> {
 		if let Some(Token { data: TokenData::Identifier(i), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let i_sym = intern(&self.name_interner, i);
@@ -308,7 +305,6 @@ impl<'src> Parser<'src> {
 			None
 		}
 	}
-	#[inline(always)]
 	fn get_ident(&mut self) -> Option<Identifier> {
 		if let Some(Token { data: TokenData::Identifier(s), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let sym = intern(&self.name_interner, s);
@@ -319,7 +315,6 @@ impl<'src> Parser<'src> {
 			})
 		} else { None }
 	}
-	#[inline(always)]
 	fn get_nws(&mut self) -> Option<NonWhitespace> {
 		if let Some(Token { data: TokenData::NonWhitespace(s), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let sym = intern(&self.name_interner, s);
@@ -330,7 +325,6 @@ impl<'src> Parser<'src> {
 			})
 		} else { None }
 	}
-	#[inline(always)]
 	fn get_string(&mut self) -> Option<StringConst> {
 		if let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let sym = intern(&self.string_interner, s);
@@ -341,7 +335,6 @@ impl<'src> Parser<'src> {
 			})
 		} else { None }
 	}
-	#[inline(always)]
 	fn get_string_concat(&mut self) -> Option<StringConst> {
 		if let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let mut sym = intern(&self.string_interner, s);
@@ -361,7 +354,6 @@ impl<'src> Parser<'src> {
 			})
 		} else { None }
 	}
-	#[inline(always)]
 	fn get_name(&mut self) -> Option<NameConst> {
 		if let Some(Token { data: TokenData::Name(s), .. }) = self.tokenizer.peek(&mut self.errs) {
 			let sym = intern(&self.name_interner, s);
@@ -372,7 +364,6 @@ impl<'src> Parser<'src> {
 			})
 		} else { None }
 	}
-	#[inline(always)]
 	fn get_int(&mut self) -> Option<IntConst> {
 		if let Some(Token { data: TokenData::Int { val, long, unsigned }, .. }) = self.tokenizer.peek(&mut self.errs) {
 			let (val, long, unsigned) = (*val, *long, *unsigned);
@@ -383,7 +374,6 @@ impl<'src> Parser<'src> {
 			})
 		} else { None }
 	}
-	#[inline(always)]
 	fn get_float(&mut self) -> Option<FloatConst> {
 		if let Some(Token { data: TokenData::Float { val, double }, .. }) = self.tokenizer.peek(&mut self.errs) {
 			let (val, double) = (*val, *double);
@@ -395,14 +385,12 @@ impl<'src> Parser<'src> {
 		} else { None }
 	}
 
-	#[inline(always)]
 	fn get_bool(&mut self) -> Option<(bool, Span)> {
 		if let Some((x, s)) = self.get_keyword(&[Keyword::True, Keyword::False]) {
 			Some((x == Keyword::True, s))
 		} else { None }
 	}
 
-	#[inline(always)]
 	fn get_const(&mut self) -> Option<Const> {
 		if let Some(s) = self.get_string_concat() {
 			Some(Const { span: s.span, kind: ConstKind::String(s) })
@@ -421,7 +409,6 @@ impl<'src> Parser<'src> {
 		}
 	}
 
-	#[inline(always)]
 	fn expect<T>(&mut self, val: Option<T>, msg: &str) -> Result<T, ParsingError> {
 		if let Some(v) = val {
 			Ok(v)
