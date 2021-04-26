@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::ops::Range;
 use core::str::CharIndices;
 
@@ -44,7 +45,6 @@ macro_rules! rule_grouping_type {
 #[derive(Debug, PartialEq)]
 pub struct Token<'src> {
 	pub original: &'src str,
-	pub doc_string: String,
 	pub data: TokenData<'src>
 }
 
@@ -74,6 +74,8 @@ pub enum TokenData<'src> {
 	Include,
 
 	NonWhitespace(Cow<'src, str>),
+
+	DocComment(&'src str)
 }
 
 impl<'src> std::fmt::Display for TokenData<'src> {
@@ -88,7 +90,9 @@ impl<'src> std::fmt::Display for TokenData<'src> {
 			Self::Keyword(k)       => write!(f, "`{}`", k),
 			Self::Include          => write!(f, "#include"),
 
-			Self::NonWhitespace(_) => write!(f, "non-whitespace")
+			Self::NonWhitespace(_) => write!(f, "non-whitespace"),
+
+			Self::DocComment(_) => write!(f, "documentation string")
 		}
 	}
 }
@@ -247,25 +251,22 @@ pub struct Tokenizer<'src> {
 	file: FileIndex,
 	text: &'src str,
 	current_range: Range<usize>,
-	cur_doc_string: String,
 	remaining: CharIndices<'src>,
 	states_mode: bool,
-	peeked1: Option<Option<Token<'src>>>,
-	peeked2: Option<Option<Token<'src>>>
+	peeked: VecDeque<Option<Token<'src>>>,
 }
 
 impl<'src> Tokenizer<'src> {
 	pub fn new(file: FileIndex, text: &'src str) -> Self {
 		Self {
 			file, text, current_range: 0..0,
-			cur_doc_string: "".to_string(),
 			remaining: text.char_indices(), states_mode: false,
-			peeked1: None, peeked2: None
+			peeked: VecDeque::new()
 		}
 	}
 
 	pub fn set_states_mode(&mut self, mode: bool) {
-		if self.peeked1.is_some() { panic!("set_states_mode called while in a peeked state"); }
+		if self.peeked.len() > 0 { panic!("set_states_mode called while in a peeked state"); }
 		self.states_mode = mode;
 	}
 
@@ -314,7 +315,7 @@ impl<'src> Tokenizer<'src> {
 					} else {
 						TokenData::Identifier(res)
 					};
-					break Token { original: res, doc_string: self.doc_string(), data };
+					break Token { original: res, data };
 				}
 			}
 		}
@@ -391,7 +392,6 @@ impl<'src> Tokenizer<'src> {
 				let data = TokenData::Int { val, long, unsigned };
 				return Token {
 					original: res,
-					doc_string: self.doc_string(),
 					data
 				};
 			}
@@ -435,7 +435,6 @@ impl<'src> Tokenizer<'src> {
 			let data = TokenData::Float { val, double };
 			Token {
 				original: res,
-				doc_string: self.doc_string(),
 				data
 			}
 		} else {
@@ -451,7 +450,6 @@ impl<'src> Tokenizer<'src> {
 				let data = TokenData::Int { val, long, unsigned };
 				Token {
 					original: res,
-					doc_string: self.doc_string(),
 					data
 				}
 			} else {
@@ -463,7 +461,6 @@ impl<'src> Tokenizer<'src> {
 				let data = TokenData::Int { val, long, unsigned };
 				Token {
 					original: res,
-					doc_string: self.doc_string(),
 					data
 				}
 			}
@@ -531,7 +528,6 @@ impl<'src> Tokenizer<'src> {
 		let data = TokenData::Punctuation(ret);
 		Token {
 			original: res,
-			doc_string: self.doc_string(),
 			data
 		}
 	}
@@ -547,7 +543,6 @@ impl<'src> Tokenizer<'src> {
 					);
 					break Token {
 						original: res,
-						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -570,7 +565,6 @@ impl<'src> Tokenizer<'src> {
 					self.bump();
 					break Token {
 						original: res,
-						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -592,7 +586,6 @@ impl<'src> Tokenizer<'src> {
 					);
 					break Token {
 						original: res,
-						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -621,7 +614,6 @@ impl<'src> Tokenizer<'src> {
 					);
 					break Token {
 						original: res,
-						doc_string: self.doc_string(),
 						data
 					};
 				}
@@ -655,20 +647,33 @@ impl<'src> Tokenizer<'src> {
 				);
 				break Token {
 					original: res,
-					doc_string: self.doc_string(),
 					data
 				};
 			}
 		}
 	}
 
-	fn line_comment(&mut self) {
+	fn line_comment(&mut self) -> Option<Token<'src>> {
+		let doc = if matches!(self.first(), Some('/')) {
+			self.bump();
+			true
+		} else { false };
 		loop {
 			match self.bump() {
 				Some('\n') | None => { break; }
 				_ => {}
 			}
 		}
+		if doc {
+			let res = &self.text[self.current_range.clone()];
+			let data = TokenData::DocComment(
+				&self.text[self.current_range.start + 3..self.current_range.end]
+			);
+			Some(Token {
+				original: res,
+				data
+			})
+		} else { None }
 	}
 
 	fn block_comment(&mut self, errs: &mut Vec<ParsingError>) {
@@ -716,10 +721,6 @@ impl<'src> Tokenizer<'src> {
 		errs.push(err);
 	}
 
-	fn doc_string(&mut self) -> String {
-		std::mem::take(&mut self.cur_doc_string)
-	}
-
 	fn next_internal(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
 		if self.states_mode {
 			'outer_states: loop {
@@ -753,7 +754,7 @@ impl<'src> Tokenizer<'src> {
 					'/' => {
 						if matches!(self.first(), Some('/')) {
 							self.bump();
-							self.line_comment();
+							if let Some(t) = self.line_comment() { return Some(t) };
 							continue 'outer_states;
 						} else if matches!(self.first(), Some('*')) {
 							self.bump();
@@ -771,8 +772,8 @@ impl<'src> Tokenizer<'src> {
 					';' => self.punc(Punctuation::Semicolon, false),
 
 					'\"' => {
-						if let Token { original, doc_string, data: TokenData::String(s) } = self.string(errs) {
-							Token { original, doc_string, data: TokenData::NonWhitespace(s) }
+						if let Token { original, data: TokenData::String(s) } = self.string(errs) {
+							Token { original, data: TokenData::NonWhitespace(s) }
 						} else { unreachable!() }
 					},
 
@@ -807,7 +808,7 @@ impl<'src> Tokenizer<'src> {
 							self.remaining.nth("include".len());
 							let res = &self.text[self.current_range.clone()];
 							let data = TokenData::Include;
-							Token { original: res, doc_string: self.doc_string(), data }
+							Token { original: res, data }
 						} else if self.remaining.as_str().starts_with_ignore_ascii_case("region") {
 							self.current_range.end += "region".len();
 							self.remaining.nth("region".len());
@@ -840,7 +841,7 @@ impl<'src> Tokenizer<'src> {
 					'/' => {
 						if matches!(self.first(), Some('/')) {
 							self.bump();
-							self.line_comment();
+							if let Some(t) = self.line_comment() { return Some(t) };
 							continue 'outer;
 						} else if matches!(self.first(), Some('*')) {
 							self.bump();
@@ -886,39 +887,51 @@ impl<'src> Tokenizer<'src> {
 		}
 	}
 
-	pub fn next(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
-		if self.peeked1.is_some() {
-			let ret = self.peeked1.take().unwrap();
-			self.peeked1 = self.peeked2.take();
-			return ret;
+	fn doc_filter(t: &Option<Token>) -> bool {
+		matches!(t, Some(Token { data: TokenData::DocComment(_), .. }))
+	}
+
+	pub(crate) fn next_no_doc(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
+		while let Some(p) = self.peeked.pop_front() {
+			if Self::doc_filter(&p) { continue; }
+			return p;
+		}
+		loop {
+			let r = self.next_internal(errs);
+			if Self::doc_filter(&r) { continue; }
+			break r;
+		}
+	}
+
+	pub(crate) fn peek_no_doc(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
+		while let None = self.peeked.iter().filter(|t| !Self::doc_filter(t)).nth(0) {
+			let r = self.next_internal(errs);
+			self.peeked.push_back(r);
+		}
+		&self.peeked.iter().filter(|t| !Self::doc_filter(t)).nth(0).unwrap()
+	}
+
+	pub(crate) fn peek_twice_no_doc(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
+		while let None = self.peeked.iter().filter(|t| !Self::doc_filter(t)).nth(1) {
+			let r = self.next_internal(errs);
+			self.peeked.push_back(r);
+		}
+		&self.peeked.iter().filter(|t| !Self::doc_filter(t)).nth(1).unwrap()
+	}
+
+	pub(crate) fn next_doc(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
+		if let Some(p) = self.peeked.pop_front() {
+			return p;
 		}
 		self.next_internal(errs)
 	}
 
-	pub fn peek(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
-		if let None = self.peeked1 {
-			self.peeked1 = Some(self.next(errs));
+	pub(crate) fn peek_doc(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
+		if let None = self.peeked.iter().nth(0) {
+			let r = self.next_internal(errs);
+			self.peeked.push_back(r);
 		}
-
-		match self.peeked1.as_ref() {
-			Some(p) => &p,
-			None => unreachable!()
-		}
-	}
-
-	pub fn peek_twice(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
-		if self.peeked1.is_none() { panic!("peek_twice requested when nothing has been peeked once"); }
-
-		if let None = self.peeked2 {
-			let unpeek = self.next(errs);
-			self.peeked2 = Some(self.next(errs));
-			self.peeked1 = Some(unpeek);
-		}
-
-		match self.peeked2.as_ref() {
-			Some(p) => &p,
-			None => unreachable!()
-		}
+		&self.peeked.iter().nth(0).unwrap()
 	}
 }
 
@@ -941,78 +954,69 @@ mod test {
 		let mut errs = vec![];
 		let mut tok = Tokenizer::new(dummy_file(), s);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: "something",
-				doc_string: "".to_string(),
 				data: TokenData::Identifier("something")
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: "_s",
-				doc_string: "".to_string(),
 				data: TokenData::Identifier("_s")
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#""Hi!""#,
-				doc_string: "".to_string(),
 				data: TokenData::String(Cow::from("Hi!"))
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"'Hello...'"#,
-				doc_string: "".to_string(),
 				data: TokenData::Name("Hello...")
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"424l"#,
-				doc_string: "".to_string(),
 				data: TokenData::Int { val: 424, long: true, unsigned: false } 
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"+="#,
-				doc_string: "".to_string(),
 				data: TokenData::Punctuation(Punctuation::PlusAssign)
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"0x7453"#,
-				doc_string: "".to_string(),
 				data: TokenData::Int { val: 0x7453, long: false, unsigned: false } 
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"0.42"#,
-				doc_string: "".to_string(),
 				data: TokenData::Float { val: 0.42, double: true } 
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"@"#,
-				doc_string: "".to_string(),
 				data: TokenData::Punctuation(Punctuation::AtSign)
 			}
 		);
-		assert!(tok.next(&mut errs).is_none());
+		assert!(tok.next_no_doc(&mut errs).is_none());
 	}
 
 	#[test]
@@ -1024,61 +1028,54 @@ mod test {
 		tok.set_states_mode(true);
 		let mut errs = vec![];
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"HI#24"#,
-				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("HI#24"))
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"AA##A"#,
-				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("AA##A"))
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"/A"#,
-				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("/A"))
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#";"#,
-				doc_string: "".to_string(),
 				data: TokenData::Punctuation(Punctuation::Semicolon)
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"A"#,
-				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("A"))
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#"A/B"#,
-				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("A/B"))
 			}
 		);
 		assert_eq!(
-			tok.next(&mut errs).unwrap(),
+			tok.next_no_doc(&mut errs).unwrap(),
 			Token {
 				original: r#""Hello\t...""#,
-				doc_string: "".to_string(),
 				data: TokenData::NonWhitespace(Cow::from("Hello\t..."))
 			}
 		);
-		assert!(tok.next(&mut errs).is_none());
+		assert!(tok.next_no_doc(&mut errs).is_none());
 	}
 }

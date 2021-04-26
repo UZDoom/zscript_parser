@@ -159,6 +159,7 @@ pub struct ClassInner {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub ancestor: Option<DottableId>,
@@ -193,6 +194,7 @@ pub struct MixinClassInner {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinClassDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub inners: Vec<MixinClassInner>,
@@ -227,6 +229,7 @@ pub struct StructInner {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub metadata: Vec<StructMetadataItem>,
@@ -272,6 +275,7 @@ pub struct DeclarationMetadataItem {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberDeclaration {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub metadata: Vec<DeclarationMetadataItem>,
 	pub member_type: TypeListOrVoid,
@@ -332,6 +336,7 @@ pub struct FuncParams {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDeclaration {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub constant: bool,
@@ -343,6 +348,7 @@ pub struct FunctionDeclaration {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticConstArray {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub arr_type: Type,
 	pub name: Identifier,
@@ -572,6 +578,7 @@ pub struct IntType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub init: Option<Expression>
@@ -579,6 +586,7 @@ pub struct EnumVariant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub enum_type: Option<IntType>,
@@ -587,6 +595,7 @@ pub struct EnumDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub expr: Expression
@@ -594,6 +603,7 @@ pub struct ConstDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlagDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub flag_name: Identifier,
 	pub var_name: Identifier,
@@ -602,6 +612,7 @@ pub struct FlagDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropertyDefinition {
+	pub doc_comment: Option<StringSymbol>,
 	pub span: Span,
 	pub name: Identifier,
 	pub vars: Vec1<Identifier>

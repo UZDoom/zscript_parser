@@ -45,6 +45,12 @@ impl<T: Repr> Repr for &T {
 	}
 }
 
+impl Repr for StringSymbol {
+	fn repr(&self, (_, s): &Interners) -> String {
+		format!("{:?}", s.string(*self))
+	}
+}
+
 impl Repr for StringConst {
 	fn repr(&self, (_, s): &Interners) -> String {
 		format!("{:?}", s.string(self.symbol))
@@ -303,6 +309,7 @@ impl Tree for ClassDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Class Definition"));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.add_empty_child(format!("Ancestor: {}", self.ancestor.repr(i)));
 		builder.begin_child(format!("Metadata"));
 		for m in self.metadata.iter() {
@@ -341,6 +348,7 @@ impl Tree for StructDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Struct Definition"));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.begin_child(format!("Metadata"));
 		for m in self.metadata.iter() {
 			match &m.kind {
@@ -413,6 +421,7 @@ impl Tree for MixinClassDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Mixin Class Definition"));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.begin_child(format!("Body"));
 		for inner in self.inners.iter() {
 			match &inner.kind {
@@ -436,10 +445,12 @@ impl Tree for EnumDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Enum Definition"));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.add_empty_child(format!("Type: {:?}", self.enum_type));
 		builder.begin_child(format!("Body"));
-		for EnumVariant { name, init, .. } in self.variants.iter() {
+		for EnumVariant { name, init, doc_comment, .. } in self.variants.iter() {
 			builder.begin_child(format!("Variant: {}", name.repr(i)));
+			builder.add_empty_child(format!("Doc: {}", doc_comment.repr(i)));
 			if let Some(e) = init {
 				builder.add_empty_child(format!("Init: {}", e.repr(i)));
 			}
@@ -454,6 +465,7 @@ impl Tree for ConstDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Const Definition"));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.add_empty_child(format!("Expression: {}", self.expr.repr(i)));
 		builder.end_child();
 	}
@@ -486,6 +498,7 @@ impl Tree for PropertyDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Property Definition"));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.add_empty_child(format!("Vars: {}", self.vars.repr(i)));
 		builder.end_child();
 	}
@@ -495,6 +508,7 @@ impl Tree for FlagDefinition {
 	fn tree(&self, i: &Interners, builder: &mut TreeBuilder) {
 		builder.begin_child(format!("Flag Definition"));
 		builder.add_empty_child(format!("Flag Name: {}", self.flag_name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.add_empty_child(format!("Var Name: {}", self.var_name.repr(i)));
 		builder.add_empty_child(format!("Shift: {}", self.shift));
 		builder.end_child();
@@ -674,6 +688,7 @@ impl Tree for StaticConstArray {
 		builder.begin_child(format!("Static Const Array"));
 		builder.add_empty_child(format!("Type: {}", self.arr_type.repr(i)));
 		builder.add_empty_child(format!("Name: {}", self.name.repr(i)));
+		builder.add_empty_child(format!("Doc: {}", self.doc_comment.repr(i)));
 		builder.begin_child(format!("Values"));
 		self.exprs.tree(i, builder);
 		builder.end_child();
@@ -836,6 +851,7 @@ impl Tree for Declaration {
 			Declaration::Function(f) => {
 				builder.begin_child(format!("Function Declaration"));
 				builder.add_empty_child(format!("Name: {}", f.name.repr(i)));
+				builder.add_empty_child(format!("Doc: {}", f.doc_comment.repr(i)));
 				builder.add_empty_child(format!("Constant: {}", f.constant));
 				f.metadata.tree(i, builder);
 				f.return_types.tree(i, builder);
@@ -854,6 +870,7 @@ impl Tree for Declaration {
 					let v: Option<Vec<String>> = c.1.as_ref().map(|x| x.list.iter().map(|y| format!("[{}]", y.repr(i))).collect());
 					builder.add_empty_child(format!("{}{}", c.0.repr(i), v.map(|x| x.join("")).unwrap_or_else(|| "".to_string())));
 				}
+				builder.add_empty_child(format!("Doc: {}", m.doc_comment.repr(i)));
 				builder.end_child();
 				m.metadata.tree(i, builder);
 				builder.end_child();
