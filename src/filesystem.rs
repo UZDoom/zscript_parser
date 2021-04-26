@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::Path;
+
+use walkdir::WalkDir;
 
 use crate::*;
 
@@ -42,27 +45,60 @@ impl Files {
 }
 
 pub trait FileSystem {
-	type Root : ?Sized;
-
-	fn get_file(&mut self, filename: &str) -> std::io::Result<File>;
+	fn get_file(&mut self, filename: &str) -> Option<File>;
+	fn get_files_no_ext(&mut self, filename: &str) -> Vec<File>;
 }
 
 pub struct GZDoomFolderFileSystem {
-	pub root: PathBuf,
-	pub nice_root_name: String
+	files: HashMap<String, File>,
+	files_no_ext: HashMap<String, Vec<File>>
+}
+
+impl GZDoomFolderFileSystem {
+	pub fn new(mut root: String, nice_root_name: String) -> Self {
+		if !root.ends_with("/") { root += "/"; }
+		let subdirs = WalkDir::new(&root).follow_links(true);
+		let mut files = HashMap::new();
+		let mut files_no_ext = HashMap::new();
+		for entry in subdirs {
+			if entry.is_err() { continue; }
+			let p = entry.unwrap().into_path();
+			if p == Path::new(".") || p == Path::new("..") { continue; }
+			if p.is_dir() { continue; }
+			let file_part = p.file_name().unwrap().to_string_lossy();
+			if file_part.contains(".orig")  { continue; }
+			if file_part.contains(".bak")   { continue; }
+			if file_part.contains(".cache") { continue; }
+
+			let literal_filename = &p.to_string_lossy()[root.len()..].to_string();
+			let filename = literal_filename.to_ascii_lowercase();
+			let filename_no_ext = p.with_extension("").to_string_lossy()[root.len()..].to_ascii_lowercase();
+			let text = std::fs::read_to_string(p);
+			if text.is_err() { continue; }
+			let text = text.unwrap();
+			let f = File::new(
+				format!("{}/{}", nice_root_name, literal_filename),
+				text
+			);
+			files.insert(filename, f.clone());
+			files_no_ext
+				.entry(filename_no_ext)
+				.or_insert_with(|| vec![])
+				.push(f);
+		}
+		Self {
+			files, files_no_ext
+		}
+	}
 }
 
 impl FileSystem for GZDoomFolderFileSystem {
-	type Root = Path;
-
-	fn get_file(&mut self, filename: &str) -> std::io::Result<File> {
-		let p = self.root.join(Path::new(filename));
-		let text = std::fs::read_to_string(p)?;
-		Ok(File::new(
-			format!("{}/{}", self.nice_root_name, filename),
-			text
-		))
-    }
+	fn get_file(&mut self, filename: &str) -> Option<File> {
+		self.files.get(&filename.to_ascii_lowercase()).cloned()
+	}
+	fn get_files_no_ext(&mut self, filename: &str) -> Vec<File> {
+		self.files_no_ext.get(&filename.to_ascii_lowercase()).cloned().unwrap_or_else(|| vec![])
+	}
 }
 
 #[cfg(test)]
@@ -71,10 +107,9 @@ mod test {
 
 	#[test]
 	fn test_folder_filesystem() {
-		let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-		d.push("test_files");
+		let d = format!("{}/test_files", env!("CARGO_MANIFEST_DIR"));
 
-		let mut sys = GZDoomFolderFileSystem { root: d, nice_root_name: "test_files".to_string() };
+		let mut sys = GZDoomFolderFileSystem::new(d, "test_files".to_string());
 		let f = sys.get_file("something.txt").unwrap();
 		assert_eq!(
 			f,

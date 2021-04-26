@@ -36,9 +36,12 @@ pub fn parse_filesystem<F: FileSystem>(
 	mut filesystem: F, name_interner: Arc<RwLock<NameInterner>>, string_interner: Arc<RwLock<StringInterner>>
 ) -> FileSystemParseResult {
 	let mut ret = FileSystemParseResult { files: Files::default(), asts: vec![], errs: vec![] };
-	let root_script = if let Ok(r) = filesystem.get_file("zscript.txt") { r } else { return ret; };
-	let f = ret.files.add(root_script);
-	let mut needed_files = vec![f];
+	let root_scripts = filesystem.get_files_no_ext("zscript");
+	let mut needed_files = vec![];
+	for r in root_scripts {
+		let f = ret.files.add(r);
+		needed_files.push(f);
+	}
 	while !needed_files.is_empty() {
 		let res: Vec<_> = needed_files.par_iter().map(|&f| {
 			Parser::new(f, ret.files[f].text(), name_interner.clone(), string_interner.clone()).parse()
