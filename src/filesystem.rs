@@ -23,7 +23,7 @@ impl File {
 	pub fn text(&self) -> &str { &self.text }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct FileIndex(pub(crate) usize);
 
 #[derive(Debug, Default)]

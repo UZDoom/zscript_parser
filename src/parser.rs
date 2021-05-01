@@ -9,7 +9,6 @@ use crate::interner::*;
 use crate::filesystem::Files;
 use crate::filesystem::FileIndex;
 use crate::err::ParsingError;
-use crate::err::FileSpans;
 
 #[derive(Debug)]
 pub struct Parser<'src> {
@@ -260,7 +259,7 @@ impl<'src> Parser<'src> {
 			for key in keywords {
 				if *key == *k {
 					let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
-					let span = t.span(&self.text);
+					let span = t.span(self.file, &self.text);
 					if let Token { data: TokenData::Keyword(k), .. } = t {
 						return Some((k, span));
 					} else { unreachable!() }
@@ -276,7 +275,7 @@ impl<'src> Parser<'src> {
 			for punc in puncs {
 				if *punc == *p {
 					let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
-					let span = t.span(&self.text);
+					let span = t.span(self.file, &self.text);
 					if let Token { data: TokenData::Punctuation(p), .. } = t {
 						return Some((p, span));
 					} else { unreachable!() }
@@ -295,7 +294,7 @@ impl<'src> Parser<'src> {
 				if id_sym == i_sym {
 					let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 					return Some(Identifier {
-						span: t.span(&self.text),
+						span: t.span(self.file, &self.text),
 						symbol: i_sym,
 					});
 				}
@@ -310,7 +309,7 @@ impl<'src> Parser<'src> {
 			let sym = intern(&self.name_interner, s);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 			Some(Identifier {
-				span: t.span(&self.text),
+				span: t.span(self.file, &self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -320,7 +319,7 @@ impl<'src> Parser<'src> {
 			let sym = intern(&self.name_interner, s);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 			Some(NonWhitespace {
-				span: t.span(&self.text),
+				span: t.span(self.file, &self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -330,7 +329,7 @@ impl<'src> Parser<'src> {
 			let sym = intern(&self.string_interner, s);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 			Some(StringConst {
-				span: t.span(&self.text),
+				span: t.span(self.file, &self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -339,7 +338,7 @@ impl<'src> Parser<'src> {
 		if let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek_no_doc(&mut self.errs) {
 			let mut sym = intern(&self.string_interner, s);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
-			let mut span = t.span(&self.text);
+			let mut span = t.span(self.file, &self.text);
 			while let Some(Token { data: TokenData::String(s), .. }) = self.tokenizer.peek_no_doc(&mut self.errs) {
 				let new = {
 					let l = self.string_interner.read().unwrap();
@@ -347,7 +346,7 @@ impl<'src> Parser<'src> {
 				};
 				let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 				sym = intern(&self.string_interner, &new);
-				span = span.combine(t.span(&self.text));
+				span = span.combine(t.span(self.file, &self.text));
 			}
 			Some(StringConst {
 				span, symbol: sym
@@ -359,7 +358,7 @@ impl<'src> Parser<'src> {
 			let sym = intern(&self.name_interner, s);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 			Some(NameConst {
-				span: t.span(&self.text),
+				span: t.span(self.file, &self.text),
 				symbol: sym
 			})
 		} else { None }
@@ -369,7 +368,7 @@ impl<'src> Parser<'src> {
 			let (val, long, unsigned) = (*val, *long, *unsigned);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 			Some(IntConst {
-				span: t.span(&self.text),
+				span: t.span(self.file, &self.text),
 				val, long, unsigned
 			})
 		} else { None }
@@ -379,7 +378,7 @@ impl<'src> Parser<'src> {
 			let (val, double) = (*val, *double);
 			let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
 			Some(FloatConst {
-				span: t.span(&self.text),
+				span: t.span(self.file, &self.text),
 				val, double
 			})
 		} else { None }
@@ -413,7 +412,7 @@ impl<'src> Parser<'src> {
 		if let Some(Token { data: TokenData::DocComment(s), .. }) = self.tokenizer.peek_doc(&mut self.errs) {
 			let mut sym = intern(&self.string_interner, s);
 			let t = self.tokenizer.next_doc(&mut self.errs).unwrap();
-			let mut span = t.span(&self.text);
+			let mut span = t.span(self.file, &self.text);
 			while let Some(Token { data: TokenData::DocComment(s), .. }) = self.tokenizer.peek_doc(&mut self.errs) {
 				let new = {
 					let l = self.string_interner.read().unwrap();
@@ -421,7 +420,7 @@ impl<'src> Parser<'src> {
 				};
 				let t = self.tokenizer.next_doc(&mut self.errs).unwrap();
 				sym = intern(&self.string_interner, &new);
-				span = span.combine(t.span(&self.text));
+				span = span.combine(t.span(self.file, &self.text));
 			}
 			Some(sym)
 		} else { None }
@@ -437,18 +436,13 @@ impl<'src> Parser<'src> {
 				None => format!("expected {}, got `EOF`", msg),
 			};
 			let span = match next {
-			    Some(n) => n.span(&self.text),
-			    None    => Span { start: self.text.len(), end: self.text.len() }
+			    Some(n) => n.span(self.file, &self.text),
+			    None    => Span { start: self.text.len(), end: self.text.len(), file: self.file }
 			};
 			Err(ParsingError {
 				msg: err_msg,
-				file_spans: vec![
-					FileSpans {
-						file: self.file,
-						main_spans: vec1![span],
-						info_spans: vec![]
-					}
-				]
+				main_spans: vec1![span],
+				info_spans: vec![]
 			})
 		}
 	}
@@ -498,13 +492,8 @@ impl<'src> Parser<'src> {
 				Some(v) => Ok(Some(v)),
 				None => Err(ParsingError {
 					msg: "invalid version directive".to_string(),
-					file_spans: vec![
-						FileSpans {
-							file: self.file,
-							main_spans: vec1![s.span],
-							info_spans: vec![]
-						}
-					]
+					main_spans: vec1![s.span],
+					info_spans: vec![]
 				})
 			}
 		} else {
@@ -619,7 +608,7 @@ impl<'src> Parser<'src> {
 			let rhs = self.get_expr_inner(p, r_prec)?;
 
 			return Ok(Some(Expression {
-				span: op_tok.unwrap().span(&self.text).combine(rhs.span),
+				span: op_tok.unwrap().span(self.file, &self.text).combine(rhs.span),
 				kind: ExpressionKind::Prefix { op, expr: Box::new(rhs) }
 			}));
 		}
@@ -654,7 +643,7 @@ impl<'src> Parser<'src> {
 				let op_tok = self.tokenizer.next_no_doc(&mut self.errs);
 
 				lhs = Expression {
-					span: lhs.span.combine(op_tok.unwrap().span(&self.text)),
+					span: lhs.span.combine(op_tok.unwrap().span(self.file, &self.text)),
 					kind: ExpressionKind::Postfix {
 						op,
 						expr: Box::new(lhs)
@@ -720,7 +709,7 @@ impl<'src> Parser<'src> {
 						}
 					}
 					InfixOp::LeftRound => {
-						let (exprs, s1) = self.get_function_call_args(op_tok.unwrap().span(&self.text))?;
+						let (exprs, s1) = self.get_function_call_args(op_tok.unwrap().span(self.file, &self.text))?;
 						Expression {
 							span: lhs.span.combine(s1),
 							kind: ExpressionKind::FunctionCall {
@@ -1542,7 +1531,7 @@ impl<'src> Parser<'src> {
 
 	fn get_decl_prelude(&mut self) -> Result<Option<(Vec<DeclarationMetadataItem>, Span)>, ParsingError> {
 		let mut ret = None;
-		let mut top_span = Span { start: 0, end: 0 };
+		let mut top_span = Span { start: 0, end: 0, file: self.file };
 		loop {
 			if let Some((k, s0)) = self.get_keyword(&[
 				Keyword::Native, Keyword::Static, Keyword::Private, Keyword::Protected,
@@ -1746,7 +1735,7 @@ impl<'src> Parser<'src> {
 		}
 		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek_no_doc(&mut self.errs) {
 			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice_no_doc(&mut self.errs) {
-				let s0 = self.tokenizer.next_no_doc(&mut self.errs).unwrap().span(&self.text);
+				let s0 = self.tokenizer.next_no_doc(&mut self.errs).unwrap().span(self.file, &self.text);
 				let s = self.get_static_const_body(s0, doc)?.unwrap();
 				return Ok(Some(ClassInner { span: s.span, kind: ClassInnerKind::StaticConstArray(s) }));
 			}
@@ -1873,7 +1862,7 @@ impl<'src> Parser<'src> {
 		}
 		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek_no_doc(&mut self.errs) {
 			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice_no_doc(&mut self.errs) {
-				let s0 = self.tokenizer.next_no_doc(&mut self.errs).unwrap().span(&self.text);
+				let s0 = self.tokenizer.next_no_doc(&mut self.errs).unwrap().span(self.file, &self.text);
 				let s = self.get_static_const_body(s0, doc)?.unwrap();
 				return Ok(Some(MixinClassInner { span: s.span, kind: MixinClassInnerKind::StaticConstArray(s) }));
 			}
@@ -1937,7 +1926,7 @@ impl<'src> Parser<'src> {
 		}
 		if let Some(Token { data: TokenData::Keyword(Keyword::Static), .. }) = self.tokenizer.peek_no_doc(&mut self.errs) {
 			if let Some(Token { data: TokenData::Keyword(Keyword::Const), .. }) = self.tokenizer.peek_twice_no_doc(&mut self.errs) {
-				let s0 = self.tokenizer.next_no_doc(&mut self.errs).unwrap().span(&self.text);
+				let s0 = self.tokenizer.next_no_doc(&mut self.errs).unwrap().span(self.file, &self.text);
 				let s = self.get_static_const_body(s0, doc)?.unwrap();
 				return Ok(Some(StructInner { span: s.span, kind: StructInnerKind::StaticConstArray(s) }));
 			}
@@ -2526,7 +2515,7 @@ impl<'src> Parser<'src> {
 				};
 
 				definitions.push(TopLevelDefinition {
-					span: t.span(&self.text).combine(path.span),
+					span: t.span(self.file, &self.text).combine(path.span),
 					kind: TopLevelDefinitionKind::Include(path)
 				});
 				continue;

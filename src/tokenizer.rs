@@ -7,7 +7,7 @@ use str_utils::*;
 
 use crate::Span;
 use crate::filesystem::FileIndex;
-use crate::err::{FileSpans, ParsingError};
+use crate::err::ParsingError;
 
 macro_rules! rule_grouping_type {
 	($name: ident, $reg_func: ident, $match_func: ident {
@@ -48,17 +48,17 @@ pub struct Token<'src> {
 	pub data: TokenData<'src>
 }
 
-fn span(text: &str, sub: &str) -> Span {
+fn span(file: FileIndex, text: &str, sub: &str) -> Span {
 	let text_ptr = text.as_ptr() as usize;
 	let self_ptr = sub.as_ptr() as usize;
 	let start = self_ptr - text_ptr;
 	let end = start + sub.len();
-	Span { start, end }
+	Span { start, end, file }
 }
 
 impl<'src> Token<'src> {
-	pub fn span(&self, text: &'src str) -> Span {
-		span(text, &self.original)
+	pub(crate) fn span(&self, file: FileIndex, text: &'src str) -> Span {
+		span(file, text, &self.original)
 	}
 }
 
@@ -419,13 +419,8 @@ impl<'src> Tokenizer<'src> {
 					let s = &self.text[self.current_range.clone()];
 					let err = ParsingError {
 						msg: "expected at least one digit in exponent".to_string(),
-						file_spans: vec![
-							FileSpans {
-								file: self.file,
-								main_spans: vec1::vec1![span(self.text, s)],
-								info_spans: vec![]
-							}
-						]
+						main_spans: vec1::vec1![span(self.file, self.text, s)],
+						info_spans: vec![]
 					};
 					errs.push(err);
 					(0.0, double)
@@ -550,13 +545,8 @@ impl<'src> Tokenizer<'src> {
 					let res = &self.text[self.current_range.clone()];
 					let err = ParsingError {
 						msg: "unterminated name constant".to_string(),
-						file_spans: vec![
-							FileSpans {
-								file: self.file,
-								main_spans: vec1::vec1![span(self.text, res)],
-								info_spans: vec![]
-							}
-						]
+						main_spans: vec1::vec1![span(self.file, self.text, res)],
+						info_spans: vec![]
 					};
 					errs.push(err);
 					let data = TokenData::Name(
@@ -599,13 +589,8 @@ impl<'src> Tokenizer<'src> {
 					let res = &self.text[self.current_range.clone()];
 					let err = ParsingError {
 						msg: "unterminated string constant".to_string(),
-						file_spans: vec![
-							FileSpans {
-								file: self.file,
-								main_spans: vec1::vec1![span(self.text, res)],
-								info_spans: vec![]
-							}
-						]
+						main_spans: vec1::vec1![span(self.file, self.text, res)],
+						info_spans: vec![]
 					};
 					errs.push(err);
 					let s = &self.text[self.current_range.start + 1..self.current_range.end - 1];
@@ -689,13 +674,8 @@ impl<'src> Tokenizer<'src> {
 					let res = &self.text[self.current_range.clone()];
 					let err = ParsingError {
 						msg: "unterminated block comment".to_string(),
-						file_spans: vec![
-							FileSpans {
-								file: self.file,
-								main_spans: vec1::vec1![span(self.text, res)],
-								info_spans: vec![]
-							}
-						]
+						main_spans: vec1::vec1![span(self.file, self.text, res)],
+						info_spans: vec![]
 					};
 					errs.push(err);
 					break;
@@ -710,13 +690,8 @@ impl<'src> Tokenizer<'src> {
 		let c = s.chars().nth(0).unwrap();
 		let err = ParsingError {
 			msg: format!("unknown token start U+{:04X}", c as u32),
-			file_spans: vec![
-				FileSpans {
-					file: self.file,
-					main_spans: vec1::vec1![span(self.text, s)],
-					info_spans: vec![]
-				}
-			]
+			main_spans: vec1::vec1![span(self.file, self.text, s)],
+			info_spans: vec![]
 		};
 		errs.push(err);
 	}

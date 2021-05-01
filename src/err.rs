@@ -1,55 +1,49 @@
 use vec1::Vec1;
-use std::collections::BTreeMap;
+use std::collections::{HashMap, BTreeMap};
 use std::ops::Range;
 
 use unicode_width::UnicodeWidthChar;
 
 use crate::Span;
-use crate::filesystem::Files;
-use crate::filesystem::FileIndex;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FileSpans {
-	pub file: FileIndex,
-	pub main_spans: Vec1<Span>,
-	pub info_spans: Vec<Span>
-}
+use crate::filesystem::{Files, FileIndex};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsingError {
 	pub msg: String,
-	pub file_spans: Vec<FileSpans>
+	pub main_spans: Vec1<Span>,
+	pub info_spans: Vec<Span>
 }
 
 impl ParsingError {
 	fn get_lines(&self, files: &Files) -> ParsingErrorLines {
-		let mut ret = ParsingErrorLines { file_lines: vec![] };
-		for f in self.file_spans.iter() {
-			let file = &files[f.file];
-			let mut file_line = (f.file, BTreeMap::new());
-			for s in f.main_spans.iter() {
-				let span_lines = get_span_lines(&file.lines, *s);
-				for l in span_lines.lines {
-					let ranges =
-						file_line.1
-						.entry(l.line)
-						.or_insert_with(|| ErrorLineRanges::default());
+		let mut ret = ParsingErrorLines { file_lines: HashMap::new() };
+		for s in self.main_spans.iter() {
+			let file = &files[s.file];
+			let span_lines = get_span_lines(&file.lines, *s);
+			for l in span_lines.lines {
+				let ranges =
+					ret.file_lines
+					.entry(s.file)
+					.or_insert_with(|| BTreeMap::new())
+					.entry(l.line)
+					.or_insert_with(|| ErrorLineRanges::default());
 
-					ranges.main.push(l.range);
-				}
+				ranges.main.push(l.range);
 			}
-			for s in f.info_spans.iter() {
-				let span_lines = get_span_lines(&file.lines, *s);
-				for l in span_lines.lines {
-					let ranges =
-						file_line.1
-						.entry(l.line)
-						.or_insert_with(|| ErrorLineRanges::default());
+		}
+		for s in self.info_spans.iter() {
+			let file = &files[s.file];
+			let span_lines = get_span_lines(&file.lines, *s);
+			for l in span_lines.lines {
+				let ranges =
+					ret.file_lines
+					.entry(s.file)
+					.or_insert_with(|| BTreeMap::new())
+					.entry(l.line)
+					.or_insert_with(|| ErrorLineRanges::default());
 
-					ranges.info.push(l.range);
-				}
+				ranges.info.push(l.range);
 			}
-			ret.file_lines.push(file_line);
 		}
 		ret
 	}
@@ -69,7 +63,7 @@ struct ErrorLineRanges {
 }
 
 struct ParsingErrorLines {
-	file_lines: Vec<(FileIndex, BTreeMap<usize, ErrorLineRanges>)>
+	file_lines: HashMap<FileIndex, BTreeMap<usize, ErrorLineRanges>>
 }
 
 impl ParsingErrorLines {
