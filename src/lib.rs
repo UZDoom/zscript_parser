@@ -1,10 +1,15 @@
 pub mod tokenizer;
 pub mod parser;
+
+pub mod ir_common;
 pub mod ast;
+pub mod hir;
+
 pub mod err;
 pub mod filesystem;
 pub mod parser_manager;
 pub mod interner;
+pub mod print;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {

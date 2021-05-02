@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use vec1::{Vec1, vec1};
 
 use crate::*;
+use crate::ir_common::*;
 use crate::ast::*;
 use crate::tokenizer::*;
 use crate::interner::*;
