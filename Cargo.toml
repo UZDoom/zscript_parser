@@ -1,16 +1,25 @@
 [package]
+authors = ["Gutawer <russj159@gmail.com>"]
+edition = "2021"
 name = "zscript_parser"
 version = "0.1.0"
-authors = ["Gutawer <russj159@gmail.com>"]
-edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-flagset = "0.4.0"
-ptree = { version = "0.3.2", default-features = false, features = [] }
-rayon = "1.5.0"
-str-utils = "0.1.4"
-unicode-width = "0.1.8"
+flagset = "0.4.2"
+once_cell = "1.9.0"
+rayon = { version = "1.5.1", optional = true }
+str-utils = "0.1.5"
+unicode-width = "0.1.9"
 vec1 = "1.8.0"
-walkdir = "2.3.2"
+walkdir = { version = "2.3.2", optional = true }
+parking_lot = "0.11.2"
+serde = { version = "1.0.133", features = ["derive"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+parking_lot = { version = "0.11.2", features = ["wasm-bindgen"] }
+
+[features]
+default = []
+serialize = ["serde", "vec1/serde"]
+multithreaded = ["rayon"]
+gzd_folder_filesystem = ["walkdir"]
