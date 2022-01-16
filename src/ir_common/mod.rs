@@ -47,7 +47,7 @@ pub struct FloatConst {
     pub double: bool,
 }
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConstKind {
     String(StringConst),
@@ -125,7 +125,7 @@ pub(crate) fn parse_lump_version(s: &str) -> Option<VersionInfo> {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpressionKind {
     Ident(Identifier),
@@ -279,7 +279,7 @@ pub struct ArrayIndexExprs {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum FunctionCallArgKind {
     Unnamed(Expression),
@@ -294,7 +294,7 @@ pub struct FunctionCallArg {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum IntTypeKind {
     SByte,
@@ -360,7 +360,7 @@ pub struct PropertyDefinition {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DefaultStatementKind {
     Property {

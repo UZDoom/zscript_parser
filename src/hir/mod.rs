@@ -7,8 +7,13 @@ use super::interner::{NameSymbol, StringSymbol};
 use crate::ir_common::*;
 use crate::Span;
 
+#[cfg(feature = "serialize")]
+use serde::Serialize;
+
 pub mod lower;
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopLevelDefinitionKind {
     Class(ClassDefinition),
@@ -17,10 +22,12 @@ pub enum TopLevelDefinitionKind {
     Enum(EnumDefinition),
     Const(ConstDefinition),
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopLevelDefinition {
     pub span: Span,
     pub archive_num: usize,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: TopLevelDefinitionKind,
 }
 
@@ -36,6 +43,7 @@ impl TopLevelDefinition {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopLevel {
     pub definitions: HashMap<NameSymbol, Vec1<TopLevelDefinition>>,
@@ -50,6 +58,8 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClassInnerKind {
     FunctionDeclaration(FunctionDeclaration),
@@ -61,9 +71,11 @@ pub enum ClassInnerKind {
     Flag(FlagDefinition),
     StaticConstArray(StaticConstArray),
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassInner {
     pub span: Span,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: ClassInnerKind,
 }
 
@@ -82,6 +94,7 @@ impl ClassInner {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDefinition {
     pub doc_comment: Option<StringSymbol>,
@@ -96,6 +109,7 @@ pub struct ClassDefinition {
     pub inners: HashMap<NameSymbol, Vec1<ClassInner>>,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinClassDefinition {
     pub doc_comment: Option<StringSymbol>,
@@ -116,6 +130,8 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum StructInnerKind {
     FunctionDeclaration(FunctionDeclaration),
@@ -124,9 +140,11 @@ pub enum StructInnerKind {
     Const(ConstDefinition),
     StaticConstArray(StaticConstArray),
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructInner {
     pub span: Span,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: StructInnerKind,
 }
 
@@ -142,6 +160,7 @@ impl StructInner {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
     pub doc_comment: Option<StringSymbol>,
@@ -152,6 +171,7 @@ pub struct StructDefinition {
     pub inners: HashMap<NameSymbol, Vec1<StructInner>>,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticConstArray {
     pub doc_comment: Option<StringSymbol>,
@@ -182,6 +202,7 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Deprecated {
     version: VersionInfo,
@@ -197,6 +218,8 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     SingleUserType(Identifier),
@@ -213,14 +236,18 @@ pub enum Type {
     Error,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeListOrVoidKind {
     TypeList(Vec1<Type>),
     Void,
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeListOrVoid {
     pub span: Span,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: TypeListOrVoidKind,
 }
 
@@ -232,6 +259,7 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncParam {
     pub span: Span,
@@ -241,6 +269,7 @@ pub struct FuncParam {
     pub init: Option<Expression>,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncParams {
     pub span: Span,
@@ -248,6 +277,7 @@ pub struct FuncParams {
     pub variadic: bool,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDeclaration {
     pub doc_comment: Option<StringSymbol>,
@@ -283,6 +313,7 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberDeclaration {
     pub doc_comment: Option<StringSymbol>,
@@ -294,12 +325,15 @@ pub struct MemberDeclaration {
     pub name: Identifier,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompoundStatement {
     pub span: Option<Span>,
     pub statements: Vec<Statement>,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatementKind {
     Labeled(LabeledStatement),
@@ -325,18 +359,23 @@ pub enum StatementKind {
     },
     StaticConstArray(StaticConstArray),
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Statement {
     pub span: Option<Span>,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: StatementKind,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum VarInit {
     Single(Expression),
     Compound(ExprList),
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocalVariableDefinition {
     pub span: Span,
@@ -345,6 +384,8 @@ pub struct LocalVariableDefinition {
     pub init: Option<VarInit>,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum StateLineActionKind {
     Call {
@@ -353,9 +394,11 @@ pub enum StateLineActionKind {
     },
     Anonymous(CompoundStatement),
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateLineAction {
     pub span: Span,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: StateLineActionKind,
 }
 
@@ -369,6 +412,7 @@ flags! {
     }
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateLine {
     pub span: Span,
@@ -382,18 +426,24 @@ pub struct StateLine {
     pub action: Option<StateLineAction>,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum StateGotoTargetKind {
     Unscoped(DottableId),
     Scoped(Identifier, DottableId),
     Super(DottableId),
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateGotoTarget {
     pub span: Span,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: StateGotoTargetKind,
 }
 
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatesItemKind {
     Label(NonWhitespace),
@@ -407,8 +457,10 @@ pub enum StatesItemKind {
         offset: Option<Expression>,
     },
 }
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatesItem {
     pub span: Span,
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     pub kind: StatesItemKind,
 }

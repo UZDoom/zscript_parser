@@ -23,7 +23,7 @@ impl File {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FileIndex(pub(crate) usize);
 
 #[derive(Debug, Default)]

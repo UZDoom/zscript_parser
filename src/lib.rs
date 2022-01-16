@@ -14,11 +14,11 @@ pub mod parser_manager;
 use serde::Serialize;
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
+    file: filesystem::FileIndex,
     start: usize,
     end: usize,
-    file: filesystem::FileIndex,
 }
 
 impl Span {

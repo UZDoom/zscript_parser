@@ -6,7 +6,7 @@ use vec1::*;
 use crate::err::{ParsingError, ParsingErrorLevel};
 use crate::interner::*;
 use crate::ir_common::*;
-use crate::parser_manager::FileSystemParseResult;
+use crate::parser_manager::{FileIndexAndAst, FileSystemParseResult};
 use crate::Span;
 
 use crate::ast;
@@ -15,7 +15,6 @@ use crate::hir;
 #[derive(Debug)]
 pub struct HirLoweringResult {
     pub hir: hir::TopLevel,
-    pub errs: Vec<ParsingError>,
 }
 
 fn shadow_warning(span: Span) -> ParsingError {
@@ -101,8 +100,6 @@ fn statement_to_compound(stmt: ast::Statement) -> ast::CompoundStatement {
 }
 
 pub struct HirLowerer<'outer> {
-    name_interner: &'outer mut NameInterner,
-    string_interner: &'outer mut StringInterner,
     errs: &'outer mut Vec<ParsingError>,
     base_archive: bool,
     archive_num: usize,
@@ -310,6 +307,7 @@ impl<'outer> HirLowerer<'outer> {
                         });
                     }
                 }
+                add_simple!(hir::StatementKind::Loop(loop_body));
             }
             ast::StatementKind::For {
                 init,
@@ -431,13 +429,13 @@ impl<'outer> HirLowerer<'outer> {
     fn lower_action(&mut self, a: &[Identifier]) -> FlagSet<hir::ActionFlags> {
         let mut flags = FlagSet::default();
         for i in a.iter().rev() {
-            if i.symbol == self.name_interner.interned("actor") {
+            if i.symbol == intern_name("actor") {
                 dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Actor);
-            } else if i.symbol == self.name_interner.interned("overlay") {
+            } else if i.symbol == intern_name("overlay") {
                 dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Overlay);
-            } else if i.symbol == self.name_interner.interned("weapon") {
+            } else if i.symbol == intern_name("weapon") {
                 dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Weapon);
-            } else if i.symbol == self.name_interner.interned("item") {
+            } else if i.symbol == intern_name("item") {
                 dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Item);
             } else {
                 self.errs.push(ParsingError {
@@ -520,9 +518,8 @@ impl<'outer> HirLowerer<'outer> {
                     if deprecated.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let version =
-                            parse_lump_version(self.string_interner.string(version.symbol))
-                                .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
+                        let version = parse_lump_version(&*version.symbol.string())
+                            .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         deprecated = Some(hir::Deprecated { version, message });
                     }
                 }
@@ -530,7 +527,7 @@ impl<'outer> HirLowerer<'outer> {
                     if version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(self.string_interner.string(v.symbol))
+                        let v = parse_lump_version(&*v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         version = Some(v);
                     }
@@ -591,11 +588,13 @@ impl<'outer> HirLowerer<'outer> {
                             let mut param = self.lower_function_param(p);
                             if param.init.is_none() && found_init.is_some() {
                                 self.errs.push(ParsingError {
-								level: ParsingErrorLevel::Error,
-								msg: "parameter without a default value after one with a default value".to_string(),
-								main_spans: vec1![param.span],
-								info_spans: vec![found_init.unwrap()]
-							});
+                                    level: ParsingErrorLevel::Error,
+                                    msg:
+                                        "parameter without a default value after one with a default value"
+                                        .to_string(),
+                                    main_spans: vec1![param.span],
+                                    info_spans: vec![found_init.unwrap()]
+                                });
                                 param.init = Some(Expression {
                                     span: None,
                                     kind: ExpressionKind::Unknown,
@@ -706,7 +705,7 @@ impl<'outer> HirLowerer<'outer> {
                     if version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(self.string_interner.string(v.symbol))
+                        let v = parse_lump_version(&*v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         version = Some(v);
                     }
@@ -715,9 +714,8 @@ impl<'outer> HirLowerer<'outer> {
                     if deprecated.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let version =
-                            parse_lump_version(self.string_interner.string(version.symbol))
-                                .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
+                        let version = parse_lump_version(&*version.symbol.string())
+                            .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         deprecated = Some(hir::Deprecated { version, message });
                     }
                 }
@@ -840,10 +838,7 @@ impl<'outer> HirLowerer<'outer> {
                     } else {
                         self.errs.push(ParsingError {
                             level: ParsingErrorLevel::Error,
-                            msg: format!(
-                                "cannot find mixin `{}`",
-                                self.name_interner.string(m.symbol)
-                            ),
+                            msg: format!("cannot find mixin `{}`", &*m.symbol.string()),
                             main_spans: vec1![m.span],
                             info_spans: vec![],
                         });
@@ -1061,7 +1056,7 @@ impl<'outer> HirLowerer<'outer> {
                     if ret.version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(self.string_interner.string(v.symbol))
+                        let v = parse_lump_version(&*v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         ret.version = Some(v);
                     }
@@ -1216,7 +1211,7 @@ impl<'outer> HirLowerer<'outer> {
                     if ret.version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(self.string_interner.string(v.symbol))
+                        let v = parse_lump_version(&*v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         ret.version = Some(v);
                     }
@@ -1234,7 +1229,7 @@ impl<'outer> HirLowerer<'outer> {
         system: &FileSystemParseResult,
         definitions: &mut HashMap<NameSymbol, Vec1<hir::TopLevelDefinition>>,
     ) {
-        for (_, ast) in system.asts.iter() {
+        for FileIndexAndAst { ast, .. } in system.asts.iter() {
             for d in ast.definitions.iter() {
                 if let ast::TopLevelDefinitionKind::MixinClass(m) = &d.kind {
                     let new = self.lower_mixin_class(m);
@@ -1262,8 +1257,7 @@ impl<'outer> HirLowerer<'outer> {
         system: FileSystemParseResult,
         definitions: &mut HashMap<NameSymbol, Vec1<hir::TopLevelDefinition>>,
     ) {
-        self.errs.extend(system.errs);
-        for (_, ast) in system.asts {
+        for FileIndexAndAst { ast, .. } in system.asts {
             for d in ast.definitions {
                 if let Some(new) = match d.kind {
                     ast::TopLevelDefinitionKind::Class(c) => {
@@ -1396,14 +1390,8 @@ impl<'outer> HirLowerer<'outer> {
         }
     }
 
-    pub fn new(
-        name_interner: &'outer mut NameInterner,
-        string_interner: &'outer mut StringInterner,
-        errs: &'outer mut Vec<ParsingError>,
-    ) -> Self {
+    pub fn new(errs: &'outer mut Vec<ParsingError>) -> Self {
         Self {
-            name_interner,
-            string_interner,
             errs,
             base_archive: true,
             archive_num: 0,
@@ -1424,7 +1412,6 @@ impl<'outer> HirLowerer<'outer> {
         }
         HirLoweringResult {
             hir: hir::TopLevel { definitions },
-            errs: vec![],
         }
     }
 }

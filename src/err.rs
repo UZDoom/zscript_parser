@@ -74,6 +74,18 @@ impl ParsingError {
     }
 }
 
+pub fn sort_errs(errs: &mut Vec<ParsingError>) {
+    errs.sort_unstable_by_key(|err| *err.main_spans.iter().min().unwrap());
+}
+
+pub fn repr_errs(files: &Files, errs: &[ParsingError]) -> String {
+    let mut ret = "".to_string();
+    for e in errs.iter() {
+        ret += &format!("{}\n", e.repr(files));
+    }
+    ret
+}
+
 #[derive(Default)]
 struct ErrorLineRanges {
     main: Vec<Range<usize>>,

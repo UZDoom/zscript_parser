@@ -3,7 +3,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 
 #[cfg(feature = "serialize")]
-use serde::{ser::SerializeStruct, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Symbol<const CASE_SENSITIVE: bool>(usize);
@@ -131,9 +131,7 @@ impl Serialize for NameSymbol {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("NameSymbol", 1)?;
-        state.serialize_field("name", NAME_INTERNER.read().string(*self))?;
-        state.end()
+        serializer.serialize_str(NAME_INTERNER.read().string(*self))
     }
 }
 
@@ -158,8 +156,6 @@ impl Serialize for StringSymbol {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("StringSymbol", 1)?;
-        state.serialize_field("string", STRING_INTERNER.read().string(*self))?;
-        state.end()
+        serializer.serialize_str(STRING_INTERNER.read().string(*self))
     }
 }

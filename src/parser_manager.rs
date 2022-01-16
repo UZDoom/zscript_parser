@@ -8,19 +8,23 @@ use crate::parser::Parser;
 
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[derive(Debug)]
+pub struct FileIndexAndAst {
+    pub file: FileIndex,
+    pub ast: TopLevel,
+}
+
+#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+#[derive(Debug)]
 pub struct FileSystemParseResult {
-    pub asts: Vec<(FileIndex, TopLevel)>,
-    pub errs: Vec<ParsingError>,
+    pub asts: Vec<FileIndexAndAst>,
 }
 
 pub fn parse_filesystem<F: FileSystem>(
     mut filesystem: F,
     files: &mut Files,
+    errs: &mut Vec<ParsingError>,
 ) -> FileSystemParseResult {
-    let mut ret = FileSystemParseResult {
-        asts: vec![],
-        errs: vec![],
-    };
+    let mut ret = FileSystemParseResult { asts: vec![] };
     let root_scripts = filesystem.get_files_no_ext("zscript");
     let mut needed_files = vec![];
     for r in root_scripts {
@@ -52,9 +56,12 @@ pub fn parse_filesystem<F: FileSystem>(
                 }
             }
             for e in r.errs {
-                ret.errs.push(e);
+                errs.push(e);
             }
-            ret.asts.push((r.file, r.ast));
+            ret.asts.push(FileIndexAndAst {
+                file: r.file,
+                ast: r.ast,
+            });
         }
     }
     ret
