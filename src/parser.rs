@@ -263,7 +263,7 @@ impl<'src> Parser<'src> {
             for key in keywords {
                 if *key == *k {
                     let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
-                    let span = t.span(self.file, &self.text);
+                    let span = t.span(self.file, self.text);
                     if let Token {
                         data: TokenData::Keyword(k),
                         ..
@@ -289,7 +289,7 @@ impl<'src> Parser<'src> {
             for punc in puncs {
                 if *punc == *p {
                     let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
-                    let span = t.span(self.file, &self.text);
+                    let span = t.span(self.file, self.text);
                     if let Token {
                         data: TokenData::Punctuation(p),
                         ..
@@ -318,7 +318,7 @@ impl<'src> Parser<'src> {
                 if id_sym == i_sym {
                     let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
                     return Some(Identifier {
-                        span: t.span(self.file, &self.text),
+                        span: t.span(self.file, self.text),
                         symbol: i_sym,
                     });
                 }
@@ -337,7 +337,7 @@ impl<'src> Parser<'src> {
             let sym = intern_name(s);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
             Some(Identifier {
-                span: t.span(self.file, &self.text),
+                span: t.span(self.file, self.text),
                 symbol: sym,
             })
         } else {
@@ -353,7 +353,7 @@ impl<'src> Parser<'src> {
             let sym = intern_name(s);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
             Some(NonWhitespace {
-                span: t.span(self.file, &self.text),
+                span: t.span(self.file, self.text),
                 symbol: sym,
             })
         } else {
@@ -369,7 +369,7 @@ impl<'src> Parser<'src> {
             let sym = intern_string(s);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
             Some(StringConst {
-                span: t.span(self.file, &self.text),
+                span: t.span(self.file, self.text),
                 symbol: sym,
             })
         } else {
@@ -384,7 +384,7 @@ impl<'src> Parser<'src> {
         {
             let mut sym = intern_string(s);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
-            let mut span = t.span(self.file, &self.text);
+            let mut span = t.span(self.file, self.text);
             while let Some(Token {
                 data: TokenData::String(s),
                 ..
@@ -393,7 +393,7 @@ impl<'src> Parser<'src> {
                 let new = sym.string().to_string() + s;
                 let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
                 sym = intern_string(&new);
-                span = span.combine(t.span(self.file, &self.text));
+                span = span.combine(t.span(self.file, self.text));
             }
             Some(StringConst { span, symbol: sym })
         } else {
@@ -409,7 +409,7 @@ impl<'src> Parser<'src> {
             let sym = intern_name(s);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
             Some(NameConst {
-                span: t.span(self.file, &self.text),
+                span: t.span(self.file, self.text),
                 symbol: sym,
             })
         } else {
@@ -430,7 +430,7 @@ impl<'src> Parser<'src> {
             let (val, long, unsigned) = (*val, *long, *unsigned);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
             Some(IntConst {
-                span: t.span(self.file, &self.text),
+                span: t.span(self.file, self.text),
                 val,
                 long,
                 unsigned,
@@ -448,7 +448,7 @@ impl<'src> Parser<'src> {
             let (val, double) = (*val, *double);
             let t = self.tokenizer.next_no_doc(&mut self.errs).unwrap();
             Some(FloatConst {
-                span: t.span(self.file, &self.text),
+                span: t.span(self.file, self.text),
                 val,
                 double,
             })
@@ -509,7 +509,7 @@ impl<'src> Parser<'src> {
         {
             let mut sym = intern_string(s);
             let t = self.tokenizer.next_doc(&mut self.errs).unwrap();
-            let mut span = t.span(self.file, &self.text);
+            let mut span = t.span(self.file, self.text);
             while let Some(Token {
                 data: TokenData::DocComment(s),
                 ..
@@ -518,7 +518,7 @@ impl<'src> Parser<'src> {
                 let new = sym.string().to_string() + s;
                 let t = self.tokenizer.next_doc(&mut self.errs).unwrap();
                 sym = intern_string(&new);
-                span = span.combine(t.span(self.file, &self.text));
+                span = span.combine(t.span(self.file, self.text));
             }
             Some(sym)
         } else {
@@ -536,7 +536,7 @@ impl<'src> Parser<'src> {
                 None => format!("expected {}, got `EOF`", msg),
             };
             let span = match next {
-                Some(n) => n.span(self.file, &self.text),
+                Some(n) => n.span(self.file, self.text),
                 None => Span {
                     start: self.text.len(),
                     end: self.text.len(),
@@ -579,7 +579,7 @@ impl<'src> Parser<'src> {
         };
         let mut ids = vec1![id];
 
-        while let Some(_) = self.get_punc(&[Punctuation::Dot]) {
+        while self.get_punc(&[Punctuation::Dot]).is_some() {
             let ex = self.get_ident();
             let id = self.expect(ex, "identifier")?;
             ids.push(id);
@@ -682,7 +682,7 @@ impl<'src> Parser<'src> {
                 span: Some(
                     op_tok
                         .unwrap()
-                        .span(self.file, &self.text)
+                        .span(self.file, self.text)
                         .combine(rhs.span.unwrap()),
                 ),
                 kind: ExpressionKind::Prefix {
@@ -728,7 +728,7 @@ impl<'src> Parser<'src> {
                     span: Some(
                         lhs.span
                             .unwrap()
-                            .combine(op_tok.unwrap().span(self.file, &self.text)),
+                            .combine(op_tok.unwrap().span(self.file, self.text)),
                     ),
                     kind: ExpressionKind::Postfix {
                         op,
@@ -797,7 +797,7 @@ impl<'src> Parser<'src> {
                     }
                     InfixOp::LeftRound => {
                         let (exprs, s1) = self
-                            .get_function_call_args(op_tok.unwrap().span(self.file, &self.text))?;
+                            .get_function_call_args(op_tok.unwrap().span(self.file, self.text))?;
                         Expression {
                             span: Some(lhs.span.unwrap().combine(s1)),
                             kind: ExpressionKind::FunctionCall {
@@ -877,7 +877,7 @@ impl<'src> Parser<'src> {
         } else {
             return Ok(None);
         };
-        self.get_expr_inner(p, 0).map(|x| Some(x))
+        self.get_expr_inner(p, 0).map(Some)
     }
 
     fn get_expr_list(&mut self) -> Result<Option<ExprList>, ParsingError> {
@@ -1083,7 +1083,7 @@ impl<'src> Parser<'src> {
         } else {
             None
         }
-        .map(|x| Box::new(x));
+        .map(Box::new);
         let body = Box::new(body);
 
         Ok(Some(Statement {
@@ -1362,11 +1362,7 @@ impl<'src> Parser<'src> {
                     }))
                 }
                 Keyword::Return => {
-                    let ret = if let Some(l) = self.get_expr_list()? {
-                        Some(l)
-                    } else {
-                        None
-                    };
+                    let ret = self.get_expr_list()?;
 
                     let ex = self.get_punc(&[Punctuation::Semicolon]);
                     let (_, s1) = self.expect(ex, "`;`")?;
@@ -1597,7 +1593,7 @@ impl<'src> Parser<'src> {
         };
         let mut ret = vec1![t];
 
-        while let Some(_) = self.get_punc(&[Punctuation::Comma]) {
+        while self.get_punc(&[Punctuation::Comma]).is_some() {
             let ex = self.get_type_or_array()?;
             let t = self.expect(ex, "type")?;
             ret.push(t);
@@ -1711,7 +1707,7 @@ impl<'src> Parser<'src> {
         let ex = self.get_punc(&[Punctuation::RightRound]);
         let (_, s1) = self.expect(
             ex,
-            if args.len() == 0 {
+            if args.is_empty() {
                 "`)`, `...`, `void` or a type"
             } else if args[args.len() - 1].init.is_none() {
                 "`)`, `,` or `=`"
@@ -1974,7 +1970,7 @@ impl<'src> Parser<'src> {
             };
         };
         let s0 = metadata.as_ref().map(|(_, x)| *x);
-        let metadata = metadata.map(|(x, _)| x).unwrap_or_else(|| vec![]);
+        let metadata = metadata.map(|(x, _)| x).unwrap_or_else(Vec::new);
 
         let ex = self.get_ident();
         let name = self.expect(ex, "an identifier")?;
@@ -2100,7 +2096,7 @@ impl<'src> Parser<'src> {
                     .tokenizer
                     .next_no_doc(&mut self.errs)
                     .unwrap()
-                    .span(self.file, &self.text);
+                    .span(self.file, self.text);
                 let s = self.get_static_const_body(s0, doc)?.unwrap();
                 return Ok(Some(ClassInner {
                     span: s.span,
@@ -2312,7 +2308,7 @@ impl<'src> Parser<'src> {
                     .tokenizer
                     .next_no_doc(&mut self.errs)
                     .unwrap()
-                    .span(self.file, &self.text);
+                    .span(self.file, self.text);
                 let s = self.get_static_const_body(s0, doc)?.unwrap();
                 return Ok(Some(MixinClassInner {
                     span: s.span,
@@ -2407,7 +2403,7 @@ impl<'src> Parser<'src> {
                     .tokenizer
                     .next_no_doc(&mut self.errs)
                     .unwrap()
-                    .span(self.file, &self.text);
+                    .span(self.file, self.text);
                 let s = self.get_static_const_body(s0, doc)?.unwrap();
                 return Ok(Some(StructInner {
                     span: s.span,
@@ -2657,7 +2653,7 @@ impl<'src> Parser<'src> {
                 break s;
             }
 
-            if variants.len() > 0 {
+            if !variants.is_empty() {
                 let ex = self.get_punc(&[Punctuation::Comma]);
                 self.expect(ex, "`,` or `}`")?;
                 if let Some((_, s)) = self.get_punc(&[Punctuation::RightCurly]) {
@@ -2670,7 +2666,7 @@ impl<'src> Parser<'src> {
             let ex = self.get_ident();
             let name = self.expect(
                 ex,
-                if variants.len() == 0 {
+                if variants.is_empty() {
                     "`}` or an identifier"
                 } else {
                     "`}`, `,` or an identifier"
@@ -3220,7 +3216,7 @@ impl<'src> Parser<'src> {
                 };
 
                 definitions.push(TopLevelDefinition {
-                    span: t.span(self.file, &self.text).combine(path.span),
+                    span: t.span(self.file, self.text).combine(path.span),
                     kind: TopLevelDefinitionKind::Include(path),
                 });
                 continue;

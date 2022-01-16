@@ -43,16 +43,13 @@ pub fn parse_filesystem<F: FileSystem>(
         needed_files.clear();
         for r in res {
             for d in r.ast.definitions.iter() {
-                match &d.kind {
-                    TopLevelDefinitionKind::Include(s) => {
-                        let file = {
-                            let filename = s.symbol.string();
-                            filesystem.get_file(&filename).unwrap()
-                        };
-                        let f = files.add(file);
-                        needed_files.push(f);
-                    }
-                    _ => {}
+                if let TopLevelDefinitionKind::Include(s) = &d.kind {
+                    let file = {
+                        let filename = s.symbol.string();
+                        filesystem.get_file(&filename).unwrap()
+                    };
+                    let f = files.add(file);
+                    needed_files.push(f);
                 }
             }
             for e in r.errs {

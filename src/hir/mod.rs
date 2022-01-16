@@ -447,7 +447,7 @@ pub struct StateGotoTarget {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatesItemKind {
     Label(NonWhitespace),
-    Line(StateLine),
+    Line(Box<StateLine>),
     Stop,
     Wait,
     Fail,

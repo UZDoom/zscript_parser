@@ -16,9 +16,9 @@ pub struct Interner<const CASE_SENSITIVE: bool> {
 
 impl<const CASE_SENSITIVE: bool> std::fmt::Display for Interner<CASE_SENSITIVE> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{{\n")?;
+        writeln!(f, "{{")?;
         for (i, s) in self.string_map.iter().enumerate() {
-            write!(f, "    {} => {:?},\n", i, s)?;
+            writeln!(f, "    {} => {:?},", i, s)?;
         }
         write!(f, "}}")?;
         Ok(())
@@ -31,10 +31,8 @@ impl<const CASE_SENSITIVE: bool> Interner<CASE_SENSITIVE> {
             if let Some(s) = self.symbol_map.get(&*string) {
                 return *s;
             }
-        } else {
-            if let Some(s) = self.symbol_map.get(&*string.to_lowercase()) {
-                return *s;
-            }
+        } else if let Some(s) = self.symbol_map.get(&*string.to_lowercase()) {
+            return *s;
         }
 
         let new_sym = Symbol(self.string_map.len());
@@ -55,15 +53,13 @@ impl<const CASE_SENSITIVE: bool> Interner<CASE_SENSITIVE> {
             if let Some(s) = self.symbol_map.get(&*string) {
                 return Some(*s);
             }
-        } else {
-            if let Some(s) = self.symbol_map.get(&*string.to_lowercase()) {
-                return Some(*s);
-            }
+        } else if let Some(s) = self.symbol_map.get(&*string.to_lowercase()) {
+            return Some(*s);
         }
         None
     }
 
-    pub fn string<'s>(&'s self, symbol: Symbol<CASE_SENSITIVE>) -> &'s str {
+    pub fn string(&self, symbol: Symbol<CASE_SENSITIVE>) -> &str {
         &self.string_map[symbol.0]
     }
 }

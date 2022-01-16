@@ -97,7 +97,7 @@ pub(crate) fn parse_lump_version(s: &str) -> Option<VersionInfo> {
     let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
     s = s1;
     let major = s0.parse::<u16>().ok()?;
-    if s.chars().nth(0) != Some('.') {
+    if !s.starts_with('.') {
         return None;
     }
     s = &s[1..];
@@ -107,7 +107,7 @@ pub(crate) fn parse_lump_version(s: &str) -> Option<VersionInfo> {
     s = s1;
     let minor = s0.parse::<u16>().ok()?;
 
-    let revision = if s.chars().nth(0) == Some('.') {
+    let revision = if s.starts_with('.') {
         s = &s[1..];
         s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
         let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
@@ -117,7 +117,7 @@ pub(crate) fn parse_lump_version(s: &str) -> Option<VersionInfo> {
         0
     };
 
-    if s.chars().nth(0) != None {
+    if s.chars().next() != None {
         return None;
     }
 

@@ -38,9 +38,9 @@ impl ParsingError {
                 let ranges = ret
                     .file_lines
                     .entry(s.file)
-                    .or_insert_with(|| BTreeMap::new())
+                    .or_insert_with(BTreeMap::new)
                     .entry(l.line)
-                    .or_insert_with(|| ErrorLineRanges::default());
+                    .or_insert_with(ErrorLineRanges::default);
 
                 ranges.main.push(l.range);
             }
@@ -52,9 +52,9 @@ impl ParsingError {
                 let ranges = ret
                     .file_lines
                     .entry(s.file)
-                    .or_insert_with(|| BTreeMap::new())
+                    .or_insert_with(BTreeMap::new)
                     .entry(l.line)
-                    .or_insert_with(|| ErrorLineRanges::default());
+                    .or_insert_with(ErrorLineRanges::default);
 
                 ranges.info.push(l.range);
             }
@@ -113,17 +113,21 @@ impl ParsingErrorLines {
             ret += &format!("{} |\n", " ".repeat(line_indicator_length));
             for (l, v) in lines_ranges.iter() {
                 if let Some(last) = last_line {
-                    if *l == last + 2 {
-                        let last_line_range = &file.lines[l - 1];
-                        let last_line_text = &text[last_line_range.start..last_line_range.end];
-                        ret += &format!(
-                            "{:>width$} |{}\n",
-                            l - 1 + 1,
-                            last_line_text.replace("\t", "    "),
-                            width = line_indicator_length
-                        );
-                    } else if *l > last + 2 {
-                        ret += "...\n";
+                    match l.cmp(&(last + 2)) {
+                        std::cmp::Ordering::Equal => {
+                            let last_line_range = &file.lines[l - 1];
+                            let last_line_text = &text[last_line_range.start..last_line_range.end];
+                            ret += &format!(
+                                "{:>width$} |{}\n",
+                                l - 1 + 1,
+                                last_line_text.replace("\t", "    "),
+                                width = line_indicator_length
+                            );
+                        }
+                        std::cmp::Ordering::Greater => {
+                            ret += "...\n";
+                        }
+                        _ => {}
                     }
                 }
                 last_line = Some(l);

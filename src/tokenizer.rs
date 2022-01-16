@@ -58,7 +58,7 @@ fn span(file: FileIndex, text: &str, sub: &str) -> Span {
 
 impl<'src> Token<'src> {
     pub(crate) fn span(&self, file: FileIndex, text: &'src str) -> Span {
-        span(file, text, &self.original)
+        span(file, text, self.original)
     }
 }
 
@@ -233,8 +233,8 @@ rule_grouping_type!(Keyword, keyword, match_keyword {
     "let"          => Let
 });
 
-fn unescape<'src>(s: &'src str) -> Cow<'src, str> {
-    if s.contains("\\") {
+fn unescape(s: &'_ str) -> Cow<'_, str> {
+    if s.contains('\\') {
         let s = s.replace(r#"\""#, "\"");
         let s = s.replace(r"\\", "\\");
         let s = s.replace("\\\n", "\n");
@@ -276,14 +276,14 @@ impl<'src> Tokenizer<'src> {
     }
 
     pub fn set_states_mode(&mut self, mode: bool) {
-        if self.peeked.len() > 0 {
+        if !self.peeked.is_empty() {
             panic!("set_states_mode called while in a peeked state");
         }
         self.states_mode = mode;
     }
 
     fn reset(&mut self) {
-        match self.remaining.clone().nth(0) {
+        match self.remaining.clone().next() {
             Some((i, _)) => {
                 self.current_range = i..i;
             }
@@ -294,7 +294,7 @@ impl<'src> Tokenizer<'src> {
     }
 
     fn first(&self) -> Option<char> {
-        self.remaining.clone().nth(0).map(|(_, c)| c)
+        self.remaining.clone().next().map(|(_, c)| c)
     }
     fn second(&self) -> Option<char> {
         self.remaining.clone().nth(1).map(|(_, c)| c)
@@ -302,7 +302,7 @@ impl<'src> Tokenizer<'src> {
 
     fn bump(&mut self) -> Option<char> {
         let next = self.remaining.next();
-        let ret = match next {
+        match next {
             Some((_, c)) => {
                 self.current_range.end += c.len_utf8();
                 Some(c)
@@ -311,8 +311,7 @@ impl<'src> Tokenizer<'src> {
                 self.current_range = self.current_range.start..self.text.len();
                 None
             }
-        };
-        ret
+        }
     }
 
     fn ident_or_keyword(&mut self) -> Token<'src> {
@@ -474,41 +473,40 @@ impl<'src> Tokenizer<'src> {
                 original: res,
                 data,
             }
-        } else {
-            if first == '0' {
-                // this intentionally emulates ZScript's broken grammar rule for octal literals
-                let s = &self.text[self.current_range.clone()];
-                let i = s
-                    .find(|c: char| !('0'..='7').contains(&c))
-                    .unwrap_or(s.len());
-                let s = &s[..i];
-                let val = u64::from_str_radix(s, 8).unwrap_or(u64::max_value());
+        } else if first == '0' {
+            // this intentionally emulates ZScript's broken grammar rule for octal literals
+            let s = &self.text[self.current_range.clone()];
+            let i = s
+                .find(|c: char| !('0'..='7').contains(&c))
+                .unwrap_or(s.len());
+            let s = &s[..i];
+            let val = u64::from_str_radix(s, 8).unwrap_or(u64::max_value());
 
-                let (long, unsigned) = self.int_suffix();
-                let res = &self.text[self.current_range.clone()];
-                let data = TokenData::Int {
-                    val,
-                    long,
-                    unsigned,
-                };
-                Token {
-                    original: res,
-                    data,
-                }
-            } else {
-                let val = u64::from_str_radix(&self.text[self.current_range.clone()], 10)
-                    .unwrap_or(u64::max_value());
-                let (long, unsigned) = self.int_suffix();
-                let res = &self.text[self.current_range.clone()];
-                let data = TokenData::Int {
-                    val,
-                    long,
-                    unsigned,
-                };
-                Token {
-                    original: res,
-                    data,
-                }
+            let (long, unsigned) = self.int_suffix();
+            let res = &self.text[self.current_range.clone()];
+            let data = TokenData::Int {
+                val,
+                long,
+                unsigned,
+            };
+            Token {
+                original: res,
+                data,
+            }
+        } else {
+            let val = (&self.text[self.current_range.clone()])
+                .parse::<u64>()
+                .unwrap_or(u64::max_value());
+            let (long, unsigned) = self.int_suffix();
+            let res = &self.text[self.current_range.clone()];
+            let data = TokenData::Int {
+                val,
+                long,
+                unsigned,
+            };
+            Token {
+                original: res,
+                data,
             }
         }
     }
@@ -766,7 +764,7 @@ impl<'src> Tokenizer<'src> {
 
     fn invalid_start(&self, errs: &mut Vec<ParsingError>) {
         let s = &self.text[self.current_range.clone()];
-        let c = s.chars().nth(0).unwrap();
+        let c = s.chars().next().unwrap();
         let err = ParsingError {
             level: ParsingErrorLevel::Error,
             msg: format!("unknown token start U+{:04X}", c as u32),
@@ -1008,28 +1006,28 @@ impl<'src> Tokenizer<'src> {
     }
 
     pub(crate) fn peek_no_doc(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
-        while let None = self.peeked.iter().filter(|t| !Self::doc_filter(t)).nth(0) {
+        while !self.peeked.iter().any(|t| !Self::doc_filter(t)) {
             let r = self.next_internal(errs);
             self.peeked.push_back(r);
         }
-        &self
-            .peeked
-            .iter()
-            .filter(|t| !Self::doc_filter(t))
-            .nth(0)
-            .unwrap()
+        self.peeked.iter().find(|t| !Self::doc_filter(t)).unwrap()
     }
 
     pub(crate) fn peek_twice_no_doc(
         &mut self,
         errs: &mut Vec<ParsingError>,
     ) -> &Option<Token<'src>> {
-        while let None = self.peeked.iter().filter(|t| !Self::doc_filter(t)).nth(1) {
+        while self
+            .peeked
+            .iter()
+            .filter(|t| !Self::doc_filter(t))
+            .nth(1)
+            .is_none()
+        {
             let r = self.next_internal(errs);
             self.peeked.push_back(r);
         }
-        &self
-            .peeked
+        self.peeked
             .iter()
             .filter(|t| !Self::doc_filter(t))
             .nth(1)
@@ -1044,11 +1042,11 @@ impl<'src> Tokenizer<'src> {
     }
 
     pub(crate) fn peek_doc(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
-        if let None = self.peeked.iter().nth(0) {
+        if self.peeked.get(0).is_none() {
             let r = self.next_internal(errs);
             self.peeked.push_back(r);
         }
-        &self.peeked.iter().nth(0).unwrap()
+        &self.peeked[0]
     }
 }
 

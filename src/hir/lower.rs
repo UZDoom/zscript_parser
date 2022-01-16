@@ -929,7 +929,7 @@ impl<'outer> HirLowerer<'outer> {
                                             }
                                         }
                                     }
-                                    hir::StatesItemKind::Line(hir::StateLine {
+                                    hir::StatesItemKind::Line(Box::new(hir::StateLine {
                                         span: l.span,
                                         sprite: l.sprite,
                                         frames: l.frames,
@@ -951,7 +951,7 @@ impl<'outer> HirLowerer<'outer> {
                                                 }
                                             },
                                         }),
-                                    })
+                                    }))
                                 }
                                 ast::StatesBodyItemKind::Stop => hir::StatesItemKind::Stop,
                                 ast::StatesBodyItemKind::Wait => hir::StatesItemKind::Wait,
