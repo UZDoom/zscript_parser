@@ -42,6 +42,11 @@ impl Files {
         self.0.push(file);
         FileIndex(self.0.len() - 1)
     }
+
+    pub fn text_from_span(&self, span: Span) -> &str {
+        let file = &self[span.file];
+        &file.text()[span.start..span.end]
+    }
 }
 
 pub trait FileSystem {

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use flagset::FlagSet;
 use vec1::*;
 
 use crate::err::{ParsingError, ParsingErrorLevel};
@@ -405,7 +404,7 @@ impl<'outer> HirLowerer<'outer> {
     fn lower_function_param(&mut self, p: ast::FuncParam) -> hir::FuncParam {
         let mut ret = hir::FuncParam {
             span: p.span,
-            flags: FlagSet::default(),
+            flags: hir::FuncParamFlags::empty(),
             param_type: ast_type_to_hir_type(p.param_type),
             name: p.name,
             init: p.init,
@@ -413,30 +412,30 @@ impl<'outer> HirLowerer<'outer> {
         for f in p.flags.into_iter().rev() {
             match f.kind {
                 ast::ParamFlagItemKind::In => {
-                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::In);
+                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::IN);
                 }
                 ast::ParamFlagItemKind::Out => {
-                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::Out);
+                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::OUT);
                 }
                 ast::ParamFlagItemKind::Optional => {
-                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::Optional);
+                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::OPTIONAL);
                 }
             }
         }
         ret
     }
 
-    fn lower_action(&mut self, a: &[Identifier]) -> FlagSet<hir::ActionFlags> {
-        let mut flags = FlagSet::default();
+    fn lower_action(&mut self, a: &[Identifier]) -> hir::ActionFlags {
+        let mut flags = hir::ActionFlags::empty();
         for i in a.iter().rev() {
             if i.symbol == intern_name("actor") {
-                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Actor);
+                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::ACTOR);
             } else if i.symbol == intern_name("overlay") {
-                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Overlay);
+                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::OVERLAY);
             } else if i.symbol == intern_name("weapon") {
-                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Weapon);
+                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::WEAPON);
             } else if i.symbol == intern_name("item") {
-                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::Item);
+                dedup_flag!(i.span, self.errs, flags, hir::ActionFlags::ITEM);
             } else {
                 self.errs.push(ParsingError {
                     level: ParsingErrorLevel::Error,
@@ -464,7 +463,7 @@ impl<'outer> HirLowerer<'outer> {
             body,
         } = f;
 
-        let mut flags = FlagSet::default();
+        let mut flags = hir::FunctionFlags::empty();
         let mut deprecated = None;
         let mut version = None;
         let mut action = None;
@@ -472,46 +471,46 @@ impl<'outer> HirLowerer<'outer> {
         for m in metadata.into_iter().rev() {
             match m.kind {
                 ast::DeclarationMetadataItemKind::Native => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Native);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::NATIVE);
                 }
                 ast::DeclarationMetadataItemKind::Static => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Static);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::STATIC);
                 }
                 ast::DeclarationMetadataItemKind::Private => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Private);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::PRIVATE);
                 }
                 ast::DeclarationMetadataItemKind::Protected => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Protected);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::PROTECTED);
                 }
                 ast::DeclarationMetadataItemKind::Final => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Final);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::FINAL);
                 }
                 ast::DeclarationMetadataItemKind::Transient => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Transient);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::TRANSIENT);
                 }
                 ast::DeclarationMetadataItemKind::Virtual => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Virtual);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::VIRTUAL);
                 }
                 ast::DeclarationMetadataItemKind::Override => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Override);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::OVERRIDE);
                 }
                 ast::DeclarationMetadataItemKind::Abstract => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Abstract);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::ABSTRACT);
                 }
                 ast::DeclarationMetadataItemKind::VarArg => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::VarArg);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::VAR_ARG);
                 }
                 ast::DeclarationMetadataItemKind::UI => {
                     dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::UI);
                 }
                 ast::DeclarationMetadataItemKind::Play => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::Play);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::PLAY);
                 }
                 ast::DeclarationMetadataItemKind::ClearScope => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::ClearScope);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::CLEAR_SCOPE);
                 }
                 ast::DeclarationMetadataItemKind::VirtualScope => {
-                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::VirtualScope);
+                    dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::VIRTUAL_SCOPE);
                 }
 
                 ast::DeclarationMetadataItemKind::Deprecated { version, message } => {
@@ -541,7 +540,7 @@ impl<'outer> HirLowerer<'outer> {
                                 action = Some(self.lower_action(&l));
                             }
                             None => {
-                                action = Some(FlagSet::default());
+                                action = Some(hir::ActionFlags::empty());
                             }
                         }
                     }
@@ -660,45 +659,45 @@ impl<'outer> HirLowerer<'outer> {
             }
         };
 
-        let mut flags = FlagSet::default();
+        let mut flags = hir::MemberFlags::empty();
         let mut deprecated = None;
         let mut version = None;
 
         for m in metadata.into_iter().rev() {
             match m.kind {
                 ast::DeclarationMetadataItemKind::Native => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Native);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::NATIVE);
                 }
                 ast::DeclarationMetadataItemKind::Private => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Private);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::PRIVATE);
                 }
                 ast::DeclarationMetadataItemKind::Protected => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Protected);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::PROTECTED);
                 }
                 ast::DeclarationMetadataItemKind::Transient => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Transient);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::TRANSIENT);
                 }
                 ast::DeclarationMetadataItemKind::ReadOnly => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::ReadOnly);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::READ_ONLY);
                 }
                 ast::DeclarationMetadataItemKind::Internal => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Internal);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::INTERNAL);
                 }
                 ast::DeclarationMetadataItemKind::VarArg => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::VarArg);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::VAR_ARG);
                 }
                 ast::DeclarationMetadataItemKind::UI => {
                     dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::UI);
                 }
                 ast::DeclarationMetadataItemKind::Play => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Play);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::PLAY);
                 }
 
                 ast::DeclarationMetadataItemKind::Meta if !for_struct => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::Meta);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::META);
                 }
                 ast::DeclarationMetadataItemKind::ClearScope if self.base_archive => {
-                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::ClearScope);
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::CLEAR_SCOPE);
                 }
 
                 ast::DeclarationMetadataItemKind::Version(v) => {
@@ -868,7 +867,7 @@ impl<'outer> HirLowerer<'outer> {
                             kind: match i.kind {
                                 ast::StatesBodyItemKind::Label(l) => hir::StatesItemKind::Label(l),
                                 ast::StatesBodyItemKind::Line(l) => {
-                                    let mut flags = FlagSet::default();
+                                    let mut flags = hir::StateLineFlags::empty();
                                     let mut offset = None;
                                     let mut light = None;
                                     for m in l.metadata.into_iter().rev() {
@@ -878,7 +877,7 @@ impl<'outer> HirLowerer<'outer> {
                                                     m.span,
                                                     self.errs,
                                                     flags,
-                                                    hir::StateLineFlags::Bright
+                                                    hir::StateLineFlags::BRIGHT
                                                 )
                                             }
                                             ast::StateLineMetadataItemKind::Fast => {
@@ -886,7 +885,7 @@ impl<'outer> HirLowerer<'outer> {
                                                     m.span,
                                                     self.errs,
                                                     flags,
-                                                    hir::StateLineFlags::Fast
+                                                    hir::StateLineFlags::FAST
                                                 )
                                             }
                                             ast::StateLineMetadataItemKind::Slow => {
@@ -894,7 +893,7 @@ impl<'outer> HirLowerer<'outer> {
                                                     m.span,
                                                     self.errs,
                                                     flags,
-                                                    hir::StateLineFlags::Slow
+                                                    hir::StateLineFlags::SLOW
                                                 )
                                             }
                                             ast::StateLineMetadataItemKind::NoDelay => {
@@ -902,7 +901,7 @@ impl<'outer> HirLowerer<'outer> {
                                                     m.span,
                                                     self.errs,
                                                     flags,
-                                                    hir::StateLineFlags::NoDelay
+                                                    hir::StateLineFlags::NO_DELAY
                                                 )
                                             }
                                             ast::StateLineMetadataItemKind::CanRaise => {
@@ -910,7 +909,7 @@ impl<'outer> HirLowerer<'outer> {
                                                     m.span,
                                                     self.errs,
                                                     flags,
-                                                    hir::StateLineFlags::CanRaise
+                                                    hir::StateLineFlags::CAN_RAISE
                                                 )
                                             }
                                             ast::StateLineMetadataItemKind::Offset(e0, e1) => {
@@ -1010,10 +1009,20 @@ impl<'outer> HirLowerer<'outer> {
         let mut ret = hir::ClassDefinition {
             doc_comment: c.doc_comment,
             span: c.span,
-            ancestor: c.ancestor,
+            ancestor: c.ancestor.map(|d| {
+                if d.ids.len() > 1 {
+                    self.errs.push(ParsingError {
+                        level: ParsingErrorLevel::Error,
+                        msg: "qualified name not allowed as ancestor".to_string(),
+                        main_spans: vec1![d.span],
+                        info_spans: vec![],
+                    });
+                }
+                d.ids[0]
+            }),
             name: c.name,
 
-            flags: FlagSet::default(),
+            flags: hir::ClassDefinitionFlags::empty(),
             version: None,
             replaces: None,
 
@@ -1029,7 +1038,7 @@ impl<'outer> HirLowerer<'outer> {
                         m.span,
                         self.errs,
                         ret.flags,
-                        hir::ClassDefinitionFlags::Abstract
+                        hir::ClassDefinitionFlags::ABSTRACT
                     );
                 }
                 ast::ClassMetadataItemKind::Native => {
@@ -1037,7 +1046,7 @@ impl<'outer> HirLowerer<'outer> {
                         m.span,
                         self.errs,
                         ret.flags,
-                        hir::ClassDefinitionFlags::Native
+                        hir::ClassDefinitionFlags::NATIVE
                     );
                 }
                 ast::ClassMetadataItemKind::UI => {
@@ -1048,7 +1057,7 @@ impl<'outer> HirLowerer<'outer> {
                         m.span,
                         self.errs,
                         ret.flags,
-                        hir::ClassDefinitionFlags::Play
+                        hir::ClassDefinitionFlags::PLAY
                     );
                 }
 
@@ -1171,7 +1180,7 @@ impl<'outer> HirLowerer<'outer> {
             span: s.span,
             name: s.name,
 
-            flags: FlagSet::default(),
+            flags: hir::StructDefinitionFlags::empty(),
             version: None,
 
             inners: HashMap::new(),
@@ -1184,7 +1193,7 @@ impl<'outer> HirLowerer<'outer> {
                         m.span,
                         self.errs,
                         ret.flags,
-                        hir::StructDefinitionFlags::Native
+                        hir::StructDefinitionFlags::NATIVE
                     );
                 }
                 ast::StructMetadataItemKind::UI => {
@@ -1195,7 +1204,7 @@ impl<'outer> HirLowerer<'outer> {
                         m.span,
                         self.errs,
                         ret.flags,
-                        hir::StructDefinitionFlags::Play
+                        hir::StructDefinitionFlags::PLAY
                     );
                 }
                 ast::StructMetadataItemKind::ClearScope => {
@@ -1203,7 +1212,7 @@ impl<'outer> HirLowerer<'outer> {
                         m.span,
                         self.errs,
                         ret.flags,
-                        hir::StructDefinitionFlags::ClearScope
+                        hir::StructDefinitionFlags::CLEAR_SCOPE
                     )
                 }
 

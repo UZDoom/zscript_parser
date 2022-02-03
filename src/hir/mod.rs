@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use flagset::*;
+use bitflags::bitflags;
 use vec1::Vec1;
 
 use super::interner::{NameSymbol, StringSymbol};
@@ -11,6 +11,34 @@ use crate::Span;
 use serde::Serialize;
 
 pub mod lower;
+
+pub enum Item<'a> {
+    Class(&'a ClassDefinition),
+    Struct(&'a StructDefinition),
+    Enum(&'a EnumDefinition),
+    Const(&'a ConstDefinition),
+    Variant {
+        enum_ref: &'a EnumDefinition,
+        variant_name: NameSymbol,
+    },
+    StaticConstArray(&'a StaticConstArray),
+    FunctionDeclaration(&'a FunctionDeclaration),
+    MemberDeclaration(&'a MemberDeclaration),
+}
+
+impl<'i> Item<'i> {
+    pub fn item_provider<'s>(&'s self) -> Option<&'i dyn ItemProvider> {
+        match self {
+            Item::Class(c) => Some(*c as &dyn ItemProvider),
+            Item::Struct(s) => Some(*s as &dyn ItemProvider),
+            _ => None,
+        }
+    }
+}
+
+pub trait ItemProvider {
+    fn get_one(&self, name: NameSymbol) -> Option<Item>;
+}
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
@@ -32,7 +60,7 @@ pub struct TopLevelDefinition {
 }
 
 impl TopLevelDefinition {
-    pub(crate) fn name(&self) -> &Identifier {
+    pub fn name(&self) -> &Identifier {
         match &self.kind {
             TopLevelDefinitionKind::Class(c) => &c.name,
             TopLevelDefinitionKind::Struct(s) => &s.name,
@@ -49,12 +77,32 @@ pub struct TopLevel {
     pub definitions: HashMap<NameSymbol, Vec1<TopLevelDefinition>>,
 }
 
-flags! {
-    pub enum ClassDefinitionFlags: u8 {
-        Abstract,
-        Native,
-        UI,
-        Play
+impl ItemProvider for TopLevel {
+    fn get_one(&self, name: NameSymbol) -> Option<Item> {
+        if let Some(d) = self.definitions.get(&name) {
+            let def = &d[0];
+            Some(match &def.kind {
+                TopLevelDefinitionKind::Class(c) => Item::Class(c),
+                TopLevelDefinitionKind::Struct(s) => Item::Struct(s),
+                TopLevelDefinitionKind::Enum(e) => Item::Enum(e),
+                TopLevelDefinitionKind::Const(c) => Item::Const(c),
+                TopLevelDefinitionKind::MixinClass(_) => {
+                    return None;
+                }
+            })
+        } else {
+            None
+        }
+    }
+}
+
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct ClassDefinitionFlags: u8 {
+        const ABSTRACT = 1 << 0;
+        const NATIVE   = 1 << 1;
+        const UI       = 1 << 2;
+        const PLAY     = 1 << 3;
     }
 }
 
@@ -80,7 +128,7 @@ pub struct ClassInner {
 }
 
 impl ClassInner {
-    pub(crate) fn name(&self) -> &Identifier {
+    pub fn name(&self) -> &Identifier {
         match &self.kind {
             ClassInnerKind::FunctionDeclaration(x) => &x.name,
             ClassInnerKind::MemberDeclaration(x) => &x.name,
@@ -100,13 +148,37 @@ pub struct ClassDefinition {
     pub doc_comment: Option<StringSymbol>,
     pub span: Span,
     pub name: Identifier,
-    pub ancestor: Option<DottableId>,
-    pub flags: FlagSet<ClassDefinitionFlags>,
+    pub ancestor: Option<Identifier>,
+    pub flags: ClassDefinitionFlags,
     pub states: Vec<StatesItem>,
     pub defaults: Vec<DefaultStatement>,
     pub version: Option<VersionInfo>,
     pub replaces: Option<DottableId>,
     pub inners: HashMap<NameSymbol, Vec1<ClassInner>>,
+}
+
+impl ItemProvider for ClassDefinition {
+    fn get_one(&self, name: NameSymbol) -> Option<Item> {
+        if let Some(d) = self.inners.get(&name) {
+            let def = &d[0];
+            Some(match &def.kind {
+                ClassInnerKind::Struct(s) => Item::Struct(s),
+                ClassInnerKind::Enum(e) => Item::Enum(e),
+                ClassInnerKind::Const(c) => Item::Const(c),
+                ClassInnerKind::FunctionDeclaration(f) => Item::FunctionDeclaration(f),
+                ClassInnerKind::MemberDeclaration(m) => Item::MemberDeclaration(m),
+                ClassInnerKind::StaticConstArray(sca) => Item::StaticConstArray(sca),
+                ClassInnerKind::Property(_) => {
+                    return None;
+                }
+                ClassInnerKind::Flag(_) => {
+                    return None;
+                }
+            })
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
@@ -120,13 +192,14 @@ pub struct MixinClassDefinition {
     pub inners: HashMap<NameSymbol, Vec1<ClassInner>>,
 }
 
-flags! {
-    pub enum StructDefinitionFlags: u8 {
-        ClearScope,
-        Abstract,
-        Native,
-        UI,
-        Play
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct StructDefinitionFlags: u8 {
+        const CLEAR_SCOPE = 1 << 0;
+        const ABSTRACT    = 1 << 1;
+        const NATIVE      = 1 << 2;
+        const UI          = 1 << 3;
+        const PLAY        = 1 << 4;
     }
 }
 
@@ -149,7 +222,7 @@ pub struct StructInner {
 }
 
 impl StructInner {
-    pub(crate) fn name(&self) -> &Identifier {
+    pub fn name(&self) -> &Identifier {
         match &self.kind {
             StructInnerKind::FunctionDeclaration(x) => &x.name,
             StructInnerKind::MemberDeclaration(x) => &x.name,
@@ -166,9 +239,26 @@ pub struct StructDefinition {
     pub doc_comment: Option<StringSymbol>,
     pub span: Span,
     pub name: Identifier,
-    pub flags: FlagSet<StructDefinitionFlags>,
+    pub flags: StructDefinitionFlags,
     pub version: Option<VersionInfo>,
     pub inners: HashMap<NameSymbol, Vec1<StructInner>>,
+}
+
+impl ItemProvider for StructDefinition {
+    fn get_one(&self, name: NameSymbol) -> Option<Item> {
+        if let Some(d) = self.inners.get(&name) {
+            let def = &d[0];
+            Some(match &def.kind {
+                StructInnerKind::Enum(e) => Item::Enum(e),
+                StructInnerKind::Const(c) => Item::Const(c),
+                StructInnerKind::FunctionDeclaration(f) => Item::FunctionDeclaration(f),
+                StructInnerKind::MemberDeclaration(m) => Item::MemberDeclaration(m),
+                StructInnerKind::StaticConstArray(sca) => Item::StaticConstArray(sca),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
@@ -181,24 +271,23 @@ pub struct StaticConstArray {
     pub exprs: ExprList,
 }
 
-flags! {
-    pub enum FunctionFlags: u8 {
-        Native,
-        Static,
-        Private,
-        Protected,
-        Final,
-        Transient,
-        Virtual,
-        Override,
-        Abstract,
-        VarArg,
-        UI,
-        Play,
-        ClearScope,
-        VirtualScope,
-
-        Const
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct FunctionFlags: u16 {
+        const NATIVE        = 1 << 0;
+        const STATIC        = 1 << 1;
+        const PRIVATE       = 1 << 2;
+        const PROTECTED     = 1 << 3;
+        const FINAL         = 1 << 4;
+        const TRANSIENT     = 1 << 5;
+        const VIRTUAL       = 1 << 6;
+        const OVERRIDE      = 1 << 7;
+        const ABSTRACT      = 1 << 8;
+        const VAR_ARG       = 1 << 9;
+        const UI            = 1 << 10;
+        const PLAY          = 1 << 11;
+        const CLEAR_SCOPE   = 1 << 12;
+        const VIRTUAL_SCOPE = 1 << 13;
     }
 }
 
@@ -209,12 +298,13 @@ pub struct Deprecated {
     message: Option<StringConst>,
 }
 
-flags! {
-    pub enum ActionFlags: u8 {
-        Actor,
-        Overlay,
-        Weapon,
-        Item
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct ActionFlags: u8 {
+        const ACTOR   = 1 << 0;
+        const OVERLAY = 1 << 1;
+        const WEAPON  = 1 << 2;
+        const ITEM    = 1 << 3;
     }
 }
 
@@ -251,11 +341,12 @@ pub struct TypeListOrVoid {
     pub kind: TypeListOrVoidKind,
 }
 
-flags! {
-    pub enum FuncParamFlags: u8 {
-        In,
-        Out,
-        Optional
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct FuncParamFlags: u8 {
+        const IN       = 1 << 0;
+        const OUT      = 1 << 1;
+        const OPTIONAL = 1 << 2;
     }
 }
 
@@ -263,7 +354,7 @@ flags! {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncParam {
     pub span: Span,
-    pub flags: FlagSet<FuncParamFlags>,
+    pub flags: FuncParamFlags,
     pub param_type: Type,
     pub name: Identifier,
     pub init: Option<Expression>,
@@ -284,32 +375,33 @@ pub struct FunctionDeclaration {
     pub span: Span,
     pub name: Identifier,
     pub constant: bool,
-    pub flags: FlagSet<FunctionFlags>,
+    pub flags: FunctionFlags,
     pub deprecated: Option<Deprecated>,
     pub version: VersionInfo,
-    pub action: Option<FlagSet<ActionFlags>>,
+    pub action: Option<ActionFlags>,
     pub return_types: TypeListOrVoid,
     pub params: FuncParams,
     pub body: Option<CompoundStatement>,
 }
 
-flags! {
-    pub enum MemberFlags: u8 {
-        Native,
-        Private,
-        Protected,
-        Transient,
-        ReadOnly,
-        Internal,
-        VarArg,
-        UI,
-        Play,
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct MemberFlags: u16 {
+        const NATIVE      = 1 << 0;
+        const PRIVATE     = 1 << 1;
+        const PROTECTED   = 1 << 2;
+        const TRANSIENT   = 1 << 3;
+        const READ_ONLY   = 1 << 4;
+        const INTERNAL    = 1 << 5;
+        const VAR_ARG     = 1 << 6;
+        const UI          = 1 << 7;
+        const PLAY        = 1 << 8;
 
         // only allowed in classes, not structs
-        Meta,
+        const META        = 1 << 9;
 
         // only allowed within the base archive
-        ClearScope
+        const CLEAR_SCOPE = 1 << 10;
     }
 }
 
@@ -318,7 +410,7 @@ flags! {
 pub struct MemberDeclaration {
     pub doc_comment: Option<StringSymbol>,
     pub span: Span,
-    pub flags: FlagSet<MemberFlags>,
+    pub flags: MemberFlags,
     pub deprecated: Option<Deprecated>,
     pub version: VersionInfo,
     pub member_type: Type,
@@ -402,13 +494,14 @@ pub struct StateLineAction {
     pub kind: StateLineActionKind,
 }
 
-flags! {
-    pub enum StateLineFlags: u8 {
-        Bright,
-        Fast,
-        Slow,
-        NoDelay,
-        CanRaise,
+bitflags! {
+    #[cfg_attr(feature = "serialize", derive(Serialize))]
+    pub struct StateLineFlags: u8 {
+        const BRIGHT    = 1 << 1;
+        const FAST      = 1 << 2;
+        const SLOW      = 1 << 3;
+        const NO_DELAY  = 1 << 4;
+        const CAN_RAISE = 1 << 5;
     }
 }
 
@@ -419,8 +512,8 @@ pub struct StateLine {
     pub sprite: NonWhitespace,
     pub frames: NonWhitespace,
     pub duration: Expression,
-    pub flags: FlagSet<StateLineFlags>,
-    pub action_flags: Option<FlagSet<ActionFlags>>,
+    pub flags: StateLineFlags,
+    pub action_flags: Option<ActionFlags>,
     pub offset: Option<(Expression, Expression)>,
     pub light: Option<Vec1<StringConst>>,
     pub action: Option<StateLineAction>,

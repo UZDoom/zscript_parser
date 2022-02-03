@@ -10,36 +10,36 @@ use crate::filesystem::FileIndex;
 use crate::Span;
 
 macro_rules! rule_grouping_type {
-	($name: ident, $reg_func: ident, $match_func: ident {
-		$( $rule: literal => $res: ident ),*
-	}) => {
-		#[derive(Debug, PartialEq, Copy, Clone)]
-		pub enum $name {
-			$(
-				$res,
-			)*
-		}
+    ($name: ident, $reg_func: ident, $match_func: ident {
+        $( $rule: literal => $res: ident ),*
+    }) => {
+        #[derive(Debug, PartialEq, Copy, Clone)]
+        pub enum $name {
+            $(
+                $res,
+            )*
+        }
 
-		impl std::fmt::Display for $name {
-			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-				match *self {
-					$(
-						Self::$res => write!(f, "{}", $rule),
-					)*
-				}
-			}
-		}
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                match *self {
+                    $(
+                        Self::$res => write!(f, "`{}`", $rule),
+                    )*
+                }
+            }
+        }
 
-		#[allow(unused)]
-		fn $match_func<'src>(r: &'src str) -> Option<$name> {
-			match &*r.to_lowercase() {
-				$(
-					$rule => Some($name::$res),
-				)*
-				_ => None
-			}
-		}
-	};
+        #[allow(unused)]
+        fn $match_func<'src>(r: &'src str) -> Option<$name> {
+            match &*r.to_lowercase() {
+                $(
+                    $rule => Some($name::$res),
+                )*
+                _ => None
+            }
+        }
+    };
 }
 
 #[derive(Debug, PartialEq)]
@@ -93,8 +93,8 @@ impl<'src> std::fmt::Display for TokenData<'src> {
             Self::String(_) => write!(f, "a string literal"),
             Self::Int { .. } => write!(f, "an integer constant"),
             Self::Float { .. } => write!(f, "a float constant"),
-            Self::Punctuation(p) => write!(f, "`{}`", p),
-            Self::Keyword(k) => write!(f, "`{}`", k),
+            Self::Punctuation(p) => write!(f, "{}", p),
+            Self::Keyword(k) => write!(f, "{}", k),
             Self::Include => write!(f, "#include"),
 
             Self::NonWhitespace(_) => write!(f, "non-whitespace"),
@@ -1061,13 +1061,13 @@ mod test {
     #[test]
     fn test_tokenizer() {
         let s = r#"
-			something _s "Hi!" // hello!
-			/* hi
-			 * end of comment */
-			#region Some Stuff
-			'Hello...'424l += 0x7453 0.42 @
-			#endregion
-		"#;
+            something _s "Hi!" // hello!
+            /* hi
+             * end of comment */
+            #region Some Stuff
+            'Hello...'424l += 0x7453 0.42 @
+            #endregion
+        "#;
         let mut errs = vec![];
         let mut tok = Tokenizer::new(dummy_file(), s);
         assert_eq!(
@@ -1150,8 +1150,8 @@ mod test {
     #[test]
     fn test_tokenizer_states() {
         let s = r#"HI#24 AA##A /A; A// comment
-		A/B/* comment again */
-		"Hello\t...""#;
+            A/B/* comment again */
+            "Hello\t...""#;
         let mut tok = Tokenizer::new(dummy_file(), s);
         tok.set_states_mode(true);
         let mut errs = vec![];

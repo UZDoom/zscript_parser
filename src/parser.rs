@@ -641,7 +641,7 @@ impl<'src> Parser<'src> {
                 }
 
                 let ex = self.get_punc(&[Punctuation::Comma]);
-                self.expect(ex, "`,`")?;
+                self.expect(ex, "`,`, `)`, or an operator")?;
 
                 let ex = self.get_expr()?;
                 let expr1 = self.expect(ex, "an expression")?;
@@ -654,13 +654,13 @@ impl<'src> Parser<'src> {
                 }
 
                 let ex = self.get_punc(&[Punctuation::Comma]);
-                self.expect(ex, "`,`")?;
+                self.expect(ex, "`,`, `)`, or an operator")?;
 
                 let ex = self.get_expr()?;
                 let expr2 = self.expect(ex, "an expression")?;
 
                 let ex = self.get_punc(&[Punctuation::RightRound]);
-                let (_, s1) = self.expect(ex, "`)`")?;
+                let (_, s1) = self.expect(ex, "`)`, or an operator")?;
 
                 Ok(Some(Expression {
                     span: Some(s0.combine(s1)),
@@ -1705,16 +1705,7 @@ impl<'src> Parser<'src> {
         }
 
         let ex = self.get_punc(&[Punctuation::RightRound]);
-        let (_, s1) = self.expect(
-            ex,
-            if args.is_empty() {
-                "`)`, `...`, `void` or a type"
-            } else if args[args.len() - 1].init.is_none() {
-                "`)`, `,` or `=`"
-            } else {
-                "`)` or `,`"
-            },
-        )?;
+        let (_, s1) = self.expect(ex, "`)` or a function argument")?;
 
         Ok(FuncParams {
             span: s0.combine(s1),
@@ -2195,16 +2186,9 @@ impl<'src> Parser<'src> {
         Ok(ret)
     }
 
-    fn get_class_body(&mut self, extend: bool) -> Result<(Vec<ClassInner>, Span), ParsingError> {
+    fn get_class_body(&mut self) -> Result<(Vec<ClassInner>, Span), ParsingError> {
         let ex = self.get_punc(&[Punctuation::LeftCurly]);
-        let (_, s0) = self.expect(
-            ex,
-            if extend {
-                "`{`"
-            } else {
-                "a class metadata item or `{`"
-            },
-        )?;
+        let (_, s0) = self.expect(ex, "`{`")?;
 
         let mut inners = vec![];
 
@@ -2238,7 +2222,7 @@ impl<'src> Parser<'src> {
         let ancestor = self.get_class_ancestry()?;
         let metadata = self.get_class_metadata()?;
 
-        let (inners, s1) = self.get_class_body(false)?;
+        let (inners, s1) = self.get_class_body()?;
 
         Ok(Some(ClassDefinition {
             doc_comment,
@@ -2481,16 +2465,9 @@ impl<'src> Parser<'src> {
         Ok(ret)
     }
 
-    fn get_struct_body(&mut self, extend: bool) -> Result<(Vec<StructInner>, Span), ParsingError> {
+    fn get_struct_body(&mut self) -> Result<(Vec<StructInner>, Span), ParsingError> {
         let ex = self.get_punc(&[Punctuation::LeftCurly]);
-        let (_, s0) = self.expect(
-            ex,
-            if extend {
-                "`{`"
-            } else {
-                "a struct metadata item or `{`"
-            },
-        )?;
+        let (_, s0) = self.expect(ex, "'{'")?;
 
         let mut inners = vec![];
 
@@ -2529,7 +2506,7 @@ impl<'src> Parser<'src> {
 
         let metadata = self.get_struct_metadata()?;
 
-        let (inners, s1) = self.get_struct_body(false)?;
+        let (inners, s1) = self.get_struct_body()?;
 
         Ok(Some(StructDefinition {
             doc_comment,
@@ -2556,7 +2533,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_ident();
                 let class_name = self.expect(ex, "an identifier")?;
 
-                let (inners, s1) = self.get_class_body(true)?;
+                let (inners, s1) = self.get_class_body()?;
 
                 Ok(Some(Extend::Class(ExtendClass {
                     span: s0.combine(s1),
@@ -2568,7 +2545,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_ident();
                 let struct_name = self.expect(ex, "an identifier")?;
 
-                let (inners, s1) = self.get_struct_body(true)?;
+                let (inners, s1) = self.get_struct_body()?;
 
                 Ok(Some(Extend::Struct(ExtendStruct {
                     span: s0.combine(s1),
@@ -2596,8 +2573,7 @@ impl<'src> Parser<'src> {
 
         let enum_type = if self.get_punc(&[Punctuation::Colon]).is_some() {
             let ex = self.get_specific_ident(&["sbyte", "byte", "short", "ushort", "int", "uint"]);
-            let enum_type =
-                self.expect(ex, "`sbyte`, `byte`, `short`, `ushort`, `int` or `uint`")?;
+            let enum_type = self.expect(ex, "an integer type")?;
 
             let s = enum_type.symbol;
             Some(if s == intern_name("sbyte") {
@@ -2638,14 +2614,7 @@ impl<'src> Parser<'src> {
         };
 
         let ex = self.get_punc(&[Punctuation::LeftCurly]);
-        self.expect(
-            ex,
-            if enum_type.is_some() {
-                "`{`"
-            } else {
-                "`{` or `:`"
-            },
-        )?;
+        self.expect(ex, "`{`")?;
 
         let mut variants = vec![];
         let s1 = loop {
@@ -2664,14 +2633,7 @@ impl<'src> Parser<'src> {
             let doc_comment = self.get_doc_comment();
 
             let ex = self.get_ident();
-            let name = self.expect(
-                ex,
-                if variants.is_empty() {
-                    "`}` or an identifier"
-                } else {
-                    "`}`, `,` or an identifier"
-                },
-            )?;
+            let name = self.expect(ex, "`}` or an identifier")?;
             let mut span = name.span;
 
             let init = if self.get_punc(&[Punctuation::Assign]).is_some() {
@@ -2867,7 +2829,7 @@ impl<'src> Parser<'src> {
             }
 
             return Err(self
-                .expect::<()>(None, "`+`, `-`, `;` or an identifier")
+                .expect::<()>(None, "`}` or a default item")
                 .unwrap_err());
         };
 
