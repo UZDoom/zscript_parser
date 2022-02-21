@@ -72,9 +72,15 @@ mod gzd_folder_filesystem {
     }
 
     impl GZDoomFolderFileSystem {
-        pub fn new(mut root: String, nice_root_name: String) -> Self {
+        pub fn new(mut root: String, nice_root_name: String) -> std::io::Result<Self> {
             if !root.ends_with("/") {
                 root += "/";
+            }
+            if !Path::new(&root).exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("root {:?} not found", root),
+                ));
             }
             let subdirs = WalkDir::new(&root).follow_links(true);
             let mut files = HashMap::new();
@@ -117,10 +123,10 @@ mod gzd_folder_filesystem {
                     .or_insert_with(|| vec![])
                     .push(f);
             }
-            Self {
+            Ok(Self {
                 files,
                 files_no_ext,
-            }
+            })
         }
     }
 
