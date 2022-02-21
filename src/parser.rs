@@ -1244,14 +1244,24 @@ impl<'src> Parser<'src> {
         let ex = self.get_single_type()?;
         let arr_type = self.expect(ex, "a type")?;
 
+        let got_brackets = if self.get_punc(&[Punctuation::LeftSquare]).is_some() {
+            let ex = self.get_punc(&[Punctuation::RightSquare]);
+            self.expect(ex, "`]`")?;
+            true
+        } else {
+            false
+        };
+
         let ex = self.get_ident();
         let name = self.expect(ex, "an identifier")?;
 
-        let ex = self.get_punc(&[Punctuation::LeftSquare]);
-        self.expect(ex, "`[`")?;
+        if !got_brackets {
+            let ex = self.get_punc(&[Punctuation::LeftSquare]);
+            self.expect(ex, "`[`")?;
 
-        let ex = self.get_punc(&[Punctuation::RightSquare]);
-        self.expect(ex, "`]`")?;
+            let ex = self.get_punc(&[Punctuation::RightSquare]);
+            self.expect(ex, "`]`")?;
+        }
 
         let ex = self.get_punc(&[Punctuation::Assign]);
         self.expect(ex, "`=`")?;
