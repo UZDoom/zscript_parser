@@ -3,18 +3,25 @@ use crate::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct File {
     pub(crate) filename: String,
+    pub(crate) data: Vec<u8>,
     pub(crate) text: String,
     pub(crate) lines: Vec<std::ops::Range<usize>>,
 }
 
 impl File {
-    pub fn new(filename: String, text: String) -> Self {
+    pub fn new(filename: String, data: Vec<u8>) -> Self {
+        let text = String::from_utf8_lossy(&data).to_string();
         let lines = get_lines(&text);
         Self {
             filename,
+            data,
             text,
             lines,
         }
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 
     pub fn text(&self) -> &str {
@@ -111,12 +118,12 @@ mod gzd_folder_filesystem {
                 let filename = literal_filename.to_ascii_lowercase();
                 let filename_no_ext =
                     p.with_extension("").to_string_lossy()[root.len()..].to_ascii_lowercase();
-                let text = std::fs::read_to_string(p);
-                if text.is_err() {
+                let data = std::fs::read(p);
+                if data.is_err() {
                     continue;
                 }
-                let text = text.unwrap();
-                let f = File::new(format!("{}/{}", nice_root_name, literal_filename), text);
+                let data = data.unwrap();
+                let f = File::new(format!("{}/{}", nice_root_name, literal_filename), data);
                 files.insert(filename, f.clone());
                 files_no_ext
                     .entry(filename_no_ext)
