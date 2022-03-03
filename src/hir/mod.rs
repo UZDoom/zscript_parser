@@ -294,8 +294,8 @@ bitflags! {
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Deprecated {
-    version: VersionInfo,
-    message: Option<StringConst>,
+    pub version: VersionInfo,
+    pub message: Option<StringConst>,
 }
 
 bitflags! {
