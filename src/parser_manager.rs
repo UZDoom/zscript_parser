@@ -19,13 +19,33 @@ pub struct FileSystemParseResult {
     pub asts: Vec<FileIndexAndAst>,
 }
 
+pub struct ParseFileSystemConfig<'a> {
+    pub root_name: &'a str,
+}
+impl<'a> Default for ParseFileSystemConfig<'a> {
+    fn default() -> Self {
+        Self {
+            root_name: "zscript",
+        }
+    }
+}
+
 pub fn parse_filesystem<F: FileSystem>(
-    mut filesystem: F,
+    filesystem: F,
     files: &mut Files,
     errs: &mut Vec<ParsingError>,
 ) -> FileSystemParseResult {
+    parse_filesystem_config(filesystem, files, errs, &ParseFileSystemConfig::default())
+}
+
+pub fn parse_filesystem_config<F: FileSystem>(
+    mut filesystem: F,
+    files: &mut Files,
+    errs: &mut Vec<ParsingError>,
+    config: &ParseFileSystemConfig,
+) -> FileSystemParseResult {
     let mut ret = FileSystemParseResult { asts: vec![] };
-    let root_scripts = filesystem.get_files_no_ext("zscript");
+    let root_scripts = filesystem.get_files_no_ext(config.root_name);
     let mut needed_files = vec![];
     for r in root_scripts {
         let f = files.add(r);
