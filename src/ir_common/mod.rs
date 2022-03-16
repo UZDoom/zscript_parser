@@ -12,6 +12,16 @@ pub struct Identifier {
     pub span: Span,
     pub symbol: NameSymbol,
 }
+impl From<Identifier> for NameSymbol {
+    fn from(item: Identifier) -> Self {
+        item.symbol
+    }
+}
+impl From<&Identifier> for NameSymbol {
+    fn from(item: &Identifier) -> Self {
+        item.symbol
+    }
+}
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct DottableId {

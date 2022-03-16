@@ -1317,8 +1317,8 @@ impl<'outer> HirLowerer<'outer> {
                         // modify the definition while still giving an immutable borrow to
                         // lower_class_inners - it should be fast enough since removing from a
                         // hashmap isn't expensive but it's still non-ideal tbh lol
-                        let mut v = definitions.remove(&ec.name.symbol).unwrap();
-                        let mut item = v.pop().unwrap();
+                        let v = definitions.remove(&ec.name.symbol).unwrap();
+                        let mut item = v.into_vec().pop().unwrap();
                         let cur_class =
                             if let hir::TopLevelDefinitionKind::Class(c) = &mut item.kind {
                                 c
