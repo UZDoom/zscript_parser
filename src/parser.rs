@@ -250,6 +250,10 @@ impl<'src> Parser<'src> {
         }
     }
 
+    pub fn to_errs(self) -> Vec<ParsingError> {
+        self.errs
+    }
+
     fn err(&mut self, e: ParsingError) {
         self.errs.push(e);
     }
@@ -526,7 +530,7 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn expect<T>(&mut self, val: Option<T>, msg: &str) -> Result<T, ParsingError> {
+    pub fn expect<T>(&mut self, val: Option<T>, msg: &str) -> Result<T, ParsingError> {
         if let Some(v) = val {
             Ok(v)
         } else {
@@ -2027,7 +2031,7 @@ impl<'src> Parser<'src> {
         })))
     }
 
-    fn get_class_inner(&mut self) -> Result<Option<ClassInner>, ParsingError> {
+    pub fn get_class_inner(&mut self) -> Result<Option<ClassInner>, ParsingError> {
         let doc = self.get_doc_comment();
         if let Some(e) = self.get_enum(doc)? {
             return Ok(Some(ClassInner {

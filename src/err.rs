@@ -74,6 +74,35 @@ impl ParsingError {
     }
 }
 
+pub trait ToDisplayedErrors {
+    fn to_displayed_errors(&self, files: &Files) -> DisplayedParsingErrors;
+}
+
+impl ToDisplayedErrors for ParsingError {
+    fn to_displayed_errors(&self, files: &Files) -> DisplayedParsingErrors {
+        DisplayedParsingErrors(self.repr(files))
+    }
+}
+
+impl ToDisplayedErrors for Vec<ParsingError> {
+    fn to_displayed_errors(&self, files: &Files) -> DisplayedParsingErrors {
+        let mut sorted = self.clone();
+        sort_errs(&mut sorted);
+        DisplayedParsingErrors(repr_errs(files, &sorted))
+    }
+}
+
+#[derive(Debug)]
+pub struct DisplayedParsingErrors(String);
+
+impl std::fmt::Display for DisplayedParsingErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for DisplayedParsingErrors {}
+
 pub fn sort_errs(errs: &mut Vec<ParsingError>) {
     errs.sort_unstable_by_key(|err| *err.main_spans.iter().min().unwrap());
 }
@@ -120,7 +149,7 @@ impl ParsingErrorLines {
                             ret += &format!(
                                 "{:>width$} |{}\n",
                                 l - 1 + 1,
-                                last_line_text.replace("\t", "    "),
+                                last_line_text.replace('\t', "    "),
                                 width = line_indicator_length
                             );
                         }
@@ -157,7 +186,7 @@ impl ParsingErrorLines {
                 ret += &format!(
                     "{:>width$} |{}\n",
                     l + 1,
-                    line_text.replace("\t", "    "),
+                    line_text.replace('\t', "    "),
                     width = line_indicator_length
                 );
                 ret += &format!("{} |", " ".repeat(line_indicator_length));

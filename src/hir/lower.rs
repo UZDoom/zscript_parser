@@ -448,7 +448,7 @@ impl<'outer> HirLowerer<'outer> {
         flags
     }
 
-    fn lower_function_declaration(
+    pub fn lower_function_declaration(
         &mut self,
         f: ast::FunctionDeclaration,
     ) -> hir::FunctionDeclaration {
@@ -625,7 +625,7 @@ impl<'outer> HirLowerer<'outer> {
         }
     }
 
-    fn lower_member_declaration(
+    pub fn lower_member_declaration(
         &mut self,
         mem: ast::MemberDeclaration,
         for_struct: bool,
