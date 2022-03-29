@@ -20,10 +20,12 @@ impl File {
         }
     }
 
+    pub fn filename(&self) -> &str {
+        &self.filename
+    }
     pub fn data(&self) -> &[u8] {
         &self.data
     }
-
     pub fn text(&self) -> &str {
         &self.text
     }
