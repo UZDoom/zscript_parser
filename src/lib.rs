@@ -33,6 +33,16 @@ impl Span {
             file: self.file,
         }
     }
+
+    pub fn get_file(&self) -> filesystem::FileIndex {
+        self.file
+    }
+    pub fn get_start(&self) -> usize {
+        self.start
+    }
+    pub fn get_end(&self) -> usize {
+        self.end
+    }
 }
 
 fn get_lines(source: &str) -> Vec<std::ops::Range<usize>> {
