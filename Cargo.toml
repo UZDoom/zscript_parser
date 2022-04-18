@@ -1,8 +1,10 @@
 [package]
-authors = ["Gutawer <russj159@gmail.com>"]
+authors = ["Gutawer"]
 edition = "2021"
 name = "zscript_parser"
 version = "0.1.0"
+license = "MIT"
+description = "A parser for GZDoom ZScript"
 
 [dependencies]
 once_cell = "1.9.0"
