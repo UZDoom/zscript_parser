@@ -2,7 +2,7 @@
 authors = ["Gutawer"]
 edition = "2021"
 name = "zscript_parser"
-version = "0.1.0"
+version = "0.2.0"
 license = "MIT"
 description = "A parser for GZDoom ZScript"
 

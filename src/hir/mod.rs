@@ -12,34 +12,6 @@ use serde::Serialize;
 
 pub mod lower;
 
-pub enum Item<'a> {
-    Class(&'a ClassDefinition),
-    Struct(&'a StructDefinition),
-    Enum(&'a EnumDefinition),
-    Const(&'a ConstDefinition),
-    Variant {
-        enum_ref: &'a EnumDefinition,
-        variant_name: NameSymbol,
-    },
-    StaticConstArray(&'a StaticConstArray),
-    FunctionDeclaration(&'a FunctionDeclaration),
-    MemberDeclaration(&'a MemberDeclaration),
-}
-
-impl<'i> Item<'i> {
-    pub fn item_provider<'s>(&'s self) -> Option<&'i dyn ItemProvider> {
-        match self {
-            Item::Class(c) => Some(*c as &dyn ItemProvider),
-            Item::Struct(s) => Some(*s as &dyn ItemProvider),
-            _ => None,
-        }
-    }
-}
-
-pub trait ItemProvider {
-    fn get_one(&self, name: NameSymbol) -> Option<Item>;
-}
-
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "serialize", serde(tag = "kind", content = "data"))]
 #[derive(Debug, Clone, PartialEq)]
@@ -75,25 +47,6 @@ impl TopLevelDefinition {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TopLevel {
     pub definitions: HashMap<NameSymbol, Vec1<TopLevelDefinition>>,
-}
-
-impl ItemProvider for TopLevel {
-    fn get_one(&self, name: NameSymbol) -> Option<Item> {
-        if let Some(d) = self.definitions.get(&name) {
-            let def = &d[0];
-            Some(match &def.kind {
-                TopLevelDefinitionKind::Class(c) => Item::Class(c),
-                TopLevelDefinitionKind::Struct(s) => Item::Struct(s),
-                TopLevelDefinitionKind::Enum(e) => Item::Enum(e),
-                TopLevelDefinitionKind::Const(c) => Item::Const(c),
-                TopLevelDefinitionKind::MixinClass(_) => {
-                    return None;
-                }
-            })
-        } else {
-            None
-        }
-    }
 }
 
 bitflags! {
@@ -157,30 +110,6 @@ pub struct ClassDefinition {
     pub inners: HashMap<NameSymbol, Vec1<ClassInner>>,
 }
 
-impl ItemProvider for ClassDefinition {
-    fn get_one(&self, name: NameSymbol) -> Option<Item> {
-        if let Some(d) = self.inners.get(&name) {
-            let def = &d[0];
-            Some(match &def.kind {
-                ClassInnerKind::Struct(s) => Item::Struct(s),
-                ClassInnerKind::Enum(e) => Item::Enum(e),
-                ClassInnerKind::Const(c) => Item::Const(c),
-                ClassInnerKind::FunctionDeclaration(f) => Item::FunctionDeclaration(f),
-                ClassInnerKind::MemberDeclaration(m) => Item::MemberDeclaration(m),
-                ClassInnerKind::StaticConstArray(sca) => Item::StaticConstArray(sca),
-                ClassInnerKind::Property(_) => {
-                    return None;
-                }
-                ClassInnerKind::Flag(_) => {
-                    return None;
-                }
-            })
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinClassDefinition {
@@ -242,23 +171,6 @@ pub struct StructDefinition {
     pub flags: StructDefinitionFlags,
     pub version: Option<VersionInfo>,
     pub inners: HashMap<NameSymbol, Vec1<StructInner>>,
-}
-
-impl ItemProvider for StructDefinition {
-    fn get_one(&self, name: NameSymbol) -> Option<Item> {
-        if let Some(d) = self.inners.get(&name) {
-            let def = &d[0];
-            Some(match &def.kind {
-                StructInnerKind::Enum(e) => Item::Enum(e),
-                StructInnerKind::Const(c) => Item::Const(c),
-                StructInnerKind::FunctionDeclaration(f) => Item::FunctionDeclaration(f),
-                StructInnerKind::MemberDeclaration(m) => Item::MemberDeclaration(m),
-                StructInnerKind::StaticConstArray(sca) => Item::StaticConstArray(sca),
-            })
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
