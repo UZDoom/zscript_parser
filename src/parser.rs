@@ -943,17 +943,21 @@ impl<'src> Parser<'src> {
         &mut self,
     ) -> Result<Option<LocalVariableDefinition>, ParsingError> {
         if let Some(Token {
-            data: TokenData::Identifier { .. },
+            data: TokenData::Identifier(id),
             ..
         }) = self.tokenizer.peek_no_doc(&mut self.errs)
         {
-            if !matches!(
-                self.tokenizer.peek_twice_no_doc(&mut self.errs),
-                Some(Token {
-                    data: TokenData::Identifier { .. },
-                    ..
-                })
-            ) {
+            let id_sym = intern_name(id);
+            if id_sym != intern_name("array")
+                && id_sym != intern_name("map")
+                && !matches!(
+                    self.tokenizer.peek_twice_no_doc(&mut self.errs),
+                    Some(Token {
+                        data: TokenData::Identifier { .. },
+                        ..
+                    })
+                )
+            {
                 return Ok(None);
             }
         }
@@ -1737,6 +1741,19 @@ impl<'src> Parser<'src> {
             file: self.file,
         };
         loop {
+            if let Some(Token {
+                data: TokenData::Keyword(Keyword::ReadOnly),
+                ..
+            }) = self.tokenizer.peek_no_doc(&mut self.errs)
+            {
+                if let Some(Token {
+                    data: TokenData::Punctuation(Punctuation::LeftAngle),
+                    ..
+                }) = self.tokenizer.peek_twice_no_doc(&mut self.errs)
+                {
+                    break;
+                }
+            }
             if let Some((k, s0)) = self.get_keyword(&[
                 Keyword::Native,
                 Keyword::Static,
@@ -3305,5 +3322,126 @@ impl<'src> Parser<'src> {
             },
             errs: self.errs,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::filesystem::{File, Files};
+    use super::*;
+
+    fn build_parser(text: &str) -> Parser {
+        let mut files = Files::default();
+        let fndx = files.add(File::new("test.zs".to_string(), text.as_bytes().to_vec()));
+        Parser::new(fndx, text)
+    }
+
+    fn assert_no_errors(result: ParserResult) {
+        if !result.errs.is_empty() {
+            let mut errors = String::new();
+
+            for err in result.errs {
+                errors.push_str("- ");
+                errors.push_str(&err.msg);
+                errors.push('\n');
+            }
+
+            errors.pop();
+            panic!("Encountered errors:\n{}", errors);
+        }
+    }
+
+    fn assert_errors(result: ParserResult, expected: &[ParsingError]) {
+        assert_eq!(result.errs, expected);
+    }
+
+    #[test]
+    fn rettype_readonly() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class rettype_readonly_test {
+                readOnly<Dictionary> function_returning_readonly() {
+                    return null;
+                }
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn class_ptr_array() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class ptrarray_test {
+                void function() {
+                    Array<class<Object> > types;
+                }
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn multidecl() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class multidecl_test {
+                void function() {
+                    int i1, i2;
+                    Array<int> arr1, arr2;
+                }
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn decl_readonly() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class multidecl_test {
+                void function() {
+                    readOnly<int> i = 0;
+                }
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn multiline_comment_noterm_eof() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            /*
+            class multiline_comment_noterm_eof_test {
+                void function() {}
+            }
+        "#;
+
+        let parser = build_parser(SOURCE);
+        let file = parser.file;
+
+        assert_errors(
+            parser.parse(),
+            &[ParsingError {
+                level: ParsingErrorLevel::Error,
+                msg: "unterminated block comment".to_string(),
+                main_spans: vec1![Span {
+                    file,
+                    start: 40,
+                    end: 154
+                }],
+                info_spans: vec![],
+            }],
+        );
     }
 }
