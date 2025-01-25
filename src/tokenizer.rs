@@ -31,7 +31,7 @@ macro_rules! rule_grouping_type {
         }
 
         #[allow(unused)]
-        fn $match_func<'src>(r: &'src str) -> Option<$name> {
+        fn $match_func(r: &str) -> Option<$name> {
             match &*r.to_lowercase() {
                 $(
                     $rule => Some($name::$res),
@@ -317,12 +317,7 @@ impl<'src> Tokenizer<'src> {
     fn ident_or_keyword(&mut self) -> Token<'src> {
         loop {
             match self.first() {
-                Some(c)
-                    if matches!(
-                        c,
-                        'a'..='z' | 'A'..='Z' | '0'..='9' | '_'
-                    ) =>
-                {
+                Some('a'..='z' | 'A'..='Z' | '0'..='9' | '_') => {
                     self.bump();
                 }
                 _ => {
@@ -342,27 +337,15 @@ impl<'src> Tokenizer<'src> {
     }
 
     fn hex_digits(&mut self) {
-        loop {
-            match self.first() {
-                Some(c)
-                    if matches!(
-                        c,
-                        '0'..='9' | 'a'..='f' | 'A'..='F'
-                    ) =>
-                {
-                    self.bump();
-                }
-                _ => {
-                    break;
-                }
-            }
+        while let Some('0'..='9' | 'a'..='f' | 'A'..='F') = self.first() {
+            self.bump();
         }
     }
     fn dec_digits(&mut self) -> bool {
         let mut seen = false;
         loop {
             match self.first() {
-                Some(c) if matches!(c, '0'..='9') => {
+                Some('0'..='9') => {
                     self.bump();
                     seen = true;
                 }
@@ -494,7 +477,7 @@ impl<'src> Tokenizer<'src> {
                 data,
             }
         } else {
-            let val = (&self.text[self.current_range.clone()])
+            let val = self.text[self.current_range.clone()]
                 .parse::<u64>()
                 .unwrap_or(u64::max_value());
             let (long, unsigned) = self.int_suffix();
@@ -1042,7 +1025,7 @@ impl<'src> Tokenizer<'src> {
     }
 
     pub(crate) fn peek_doc(&mut self, errs: &mut Vec<ParsingError>) -> &Option<Token<'src>> {
-        if self.peeked.get(0).is_none() {
+        if self.peeked.front().is_none() {
             let r = self.next_internal(errs);
             self.peeked.push_back(r);
         }

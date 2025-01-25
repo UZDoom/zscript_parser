@@ -939,6 +939,70 @@ impl<'src> Parser<'src> {
         }))
     }
 
+    fn get_multi_assign_declaration(
+        &mut self,
+    ) -> Result<Option<LocalVariableDefinition>, ParsingError> {
+        if let Some(Token {
+            data: TokenData::Keyword(Keyword::Let),
+            ..
+        }) = self.tokenizer.peek_no_doc(&mut self.errs)
+        {
+            if let Some(Token {
+                data: TokenData::Punctuation(Punctuation::LeftSquare),
+                ..
+            }) = self.tokenizer.peek_twice_no_doc(&mut self.errs)
+            {
+                let let_span = self
+                    .tokenizer
+                    .next_no_doc(&mut self.errs)
+                    .unwrap()
+                    .span(self.file, self.text);
+                self.tokenizer.next_no_doc(&mut self.errs).unwrap();
+                let mut idents = vec![];
+                let mut first = true;
+                loop {
+                    if !first {
+                        let ex = self.get_punc(&[Punctuation::RightSquare]);
+                        if ex.is_some() {
+                            break;
+                        }
+
+                        let ex = self.get_punc(&[Punctuation::Comma]);
+                        self.expect(ex, "`,` or `]`")?;
+                    }
+                    first = false;
+
+                    let ex = self.get_ident();
+                    let ident = self.expect(ex, "an identifier")?;
+                    idents.push(ident);
+                }
+                let idents = Vec1::try_from(idents).unwrap();
+
+                let ex = self.get_punc(&[Punctuation::Assign]);
+                self.expect(ex, "`=`")?;
+
+                let ex = self.get_expr()?;
+                let expr = self.expect(ex, "an expression")?;
+
+                return Ok(Some(LocalVariableDefinition {
+                    span: let_span.combine(expr.span.unwrap()),
+                    var_type: Type {
+                        span: let_span,
+                        kind: TypeKind::Let,
+                    },
+                    inits: vec1![VarInit {
+                        span: idents[0].span.combine(expr.span.unwrap()),
+                        kind: VarInitKind::Multi {
+                            names: idents,
+                            val: expr,
+                        }
+                    }],
+                }));
+            }
+        }
+        Ok(None)
+    }
+
     fn get_variable_declaration(
         &mut self,
     ) -> Result<Option<LocalVariableDefinition>, ParsingError> {
@@ -950,6 +1014,7 @@ impl<'src> Parser<'src> {
             let id_sym = intern_name(id);
             if id_sym != intern_name("array")
                 && id_sym != intern_name("map")
+                && id_sym != intern_name("mapiterator")
                 && !matches!(
                     self.tokenizer.peek_twice_no_doc(&mut self.errs),
                     Some(Token {
@@ -1302,6 +1367,15 @@ impl<'src> Parser<'src> {
                 kind: StatementKind::Compound(c),
             }));
         }
+        if let Some(stmt) = self.get_multi_assign_declaration()? {
+            let ex = self.get_punc(&[Punctuation::Semicolon]);
+            self.expect(ex, "`;`")?;
+
+            return Ok(Some(Statement {
+                span: stmt.span,
+                kind: StatementKind::LocalVariableDefinition(stmt),
+            }));
+        }
         if let Some(stmt) = self.get_variable_declaration()? {
             let ex = self.get_punc(&[Punctuation::Semicolon]);
             self.expect(ex, "`;`")?;
@@ -1479,7 +1553,9 @@ impl<'src> Parser<'src> {
                     kind: TypeKind::ReadonlyType(inner),
                 }
             }))
-        } else if let Some(id) = self.get_specific_ident(&["array", "map"]) {
+        } else if let Some(id) =
+            self.get_specific_ident(&["array", "map", "mapiterator", "function"])
+        {
             if intern_name("array") == id.symbol {
                 let ex = self.get_punc(&[Punctuation::LeftAngle]);
                 self.expect(ex, "`<`")?;
@@ -1513,6 +1589,106 @@ impl<'src> Parser<'src> {
                 Ok(Some(Type {
                     span: id.span.combine(s1),
                     kind: TypeKind::Map(Box::new((key, value))),
+                }))
+            } else if intern_name("mapiterator") == id.symbol {
+                let ex = self.get_punc(&[Punctuation::LeftAngle]);
+                self.expect(ex, "`<`")?;
+
+                let ex = self.get_type_or_array()?;
+                let key = self.expect(ex, "a type or array")?;
+
+                let ex = self.get_punc(&[Punctuation::Comma]);
+                self.expect(ex, "`,`")?;
+
+                let ex = self.get_type_or_array()?;
+                let value = self.expect(ex, "a type or array")?;
+
+                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let (_, s1) = self.expect(ex, "`>`")?;
+
+                Ok(Some(Type {
+                    span: id.span.combine(s1),
+                    kind: TypeKind::MapIterator(Box::new((key, value))),
+                }))
+            } else if intern_name("function") == id.symbol {
+                let ex = self.get_punc(&[Punctuation::LeftAngle]);
+                self.expect(ex, "`<`")?;
+
+                if self.get_specific_ident(&["void"]).is_some() {
+                    let ex = self.get_punc(&[Punctuation::RightAngle]);
+                    let right_angle_span = self.expect(ex, "`>`")?.1;
+
+                    return Ok(Some(Type {
+                        span: id.span.combine(right_angle_span),
+                        kind: TypeKind::FuncPtr(FuncPtrKind::Void),
+                    }));
+                }
+
+                let ex = self.get_keyword(&[Keyword::UI, Keyword::Play, Keyword::ClearScope]);
+                let keyword = self.expect(ex, "`ui`, `play` or `clearscope`")?;
+                let flag = match keyword.0 {
+                    Keyword::UI => FuncPtrFlag::Ui,
+                    Keyword::Play => FuncPtrFlag::Play,
+                    Keyword::ClearScope => FuncPtrFlag::ClearScope,
+                    _ => unreachable!(),
+                };
+
+                let ex = self.get_types_or_void()?;
+                let return_types = self.expect(ex, "a type list or void")?;
+
+                let ex = self.get_punc(&[Punctuation::LeftRound]);
+                let left_span = self.expect(ex, "`(`")?.1;
+
+                let params_kind = if self.get_specific_ident(&["void"]).is_some() {
+                    FuncPtrParamsKind::Void
+                } else {
+                    let mut params = vec![];
+                    let mut first = true;
+                    loop {
+                        if !first && self.get_punc(&[Punctuation::Comma]).is_none() {
+                            break;
+                        }
+                        first = false;
+                        let (flags, s0) = self.get_func_param_flags()?;
+
+                        let ex = self.get_single_type()?;
+                        let param_type = if let Some(t) = ex {
+                            t
+                        } else {
+                            return if !flags.is_empty() {
+                                Err(self.expect(ex, "`in`, `out` or a type").unwrap_err())
+                            } else {
+                                break;
+                            };
+                        };
+                        let s0 = s0.unwrap_or(param_type.span);
+                        params.push(FuncPtrParam {
+                            span: s0,
+                            flags,
+                            ty: param_type,
+                        });
+                    }
+                    FuncPtrParamsKind::List(params)
+                };
+
+                let ex = self.get_punc(&[Punctuation::RightRound]);
+                let right_span = self.expect(ex, "`)`")?.1;
+
+                let params = FuncPtrParams {
+                    span: left_span.combine(right_span),
+                    kind: params_kind,
+                };
+
+                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let right_angle_span = self.expect(ex, "`>`")?.1;
+
+                Ok(Some(Type {
+                    span: id.span.combine(right_angle_span),
+                    kind: TypeKind::FuncPtr(FuncPtrKind::Detailed(FuncPtrDetailed {
+                        flag,
+                        return_types,
+                        params,
+                    })),
                 }))
             } else {
                 unreachable!()
@@ -1623,7 +1799,7 @@ impl<'src> Parser<'src> {
         }))
     }
 
-    fn get_func_param(&mut self) -> Result<Option<FuncParam>, ParsingError> {
+    fn get_func_param_flags(&mut self) -> Result<(Vec<ParamFlagItem>, Option<Span>), ParsingError> {
         let mut flags = vec![];
         let mut s0 = None;
         loop {
@@ -1654,6 +1830,11 @@ impl<'src> Parser<'src> {
                 break;
             }
         }
+        Ok((flags, s0))
+    }
+
+    fn get_func_param(&mut self) -> Result<Option<FuncParam>, ParsingError> {
+        let (flags, s0) = self.get_func_param_flags()?;
 
         let ex = self.get_single_type()?;
         let param_type = if let Some(t) = ex {

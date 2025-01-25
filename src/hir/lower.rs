@@ -35,48 +35,6 @@ macro_rules! dedup_flag {
     };
 }
 
-fn ast_type_to_hir_type(ty: ast::Type) -> hir::Type {
-    match ty.kind {
-        ast::TypeKind::SingleUserType(t) => hir::Type::SingleUserType(t),
-        ast::TypeKind::DottedUserType(t) => hir::Type::DottedUserType(t),
-        ast::TypeKind::NativeType(t) => hir::Type::NativeType(t),
-        ast::TypeKind::ReadonlyType(t) => hir::Type::ReadonlyType(t),
-        ast::TypeKind::ReadonlyNativeType(t) => hir::Type::ReadonlyNativeType(t),
-        ast::TypeKind::Class(t) => hir::Type::Class(t),
-        ast::TypeKind::Let => hir::Type::Let,
-        ast::TypeKind::Error => hir::Type::Error,
-        ast::TypeKind::Map(b) => {
-            let (key, value) = *b;
-            let t0 = match key.kind {
-                ast::TypeOrArrayKind::Type(t) => ast_type_to_hir_type(t),
-                ast::TypeOrArrayKind::Array(t, s) => {
-                    let new = ast_type_to_hir_type(t);
-                    lower_array_type(new, s)
-                }
-            };
-            let t1 = match value.kind {
-                ast::TypeOrArrayKind::Type(t) => ast_type_to_hir_type(t),
-                ast::TypeOrArrayKind::Array(t, s) => {
-                    let new = ast_type_to_hir_type(t);
-                    lower_array_type(new, s)
-                }
-            };
-            hir::Type::Map(Box::new((t0, t1)))
-        }
-        ast::TypeKind::DynArray(b) => {
-            let t = *b;
-            let t = match t.kind {
-                ast::TypeOrArrayKind::Type(t) => ast_type_to_hir_type(t),
-                ast::TypeOrArrayKind::Array(t, s) => {
-                    let new = ast_type_to_hir_type(t);
-                    lower_array_type(new, s)
-                }
-            };
-            hir::Type::DynArray(Box::new(t))
-        }
-    }
-}
-
 fn lower_array_type(ty: hir::Type, sizes: ArraySizes) -> hir::Type {
     let mut ret = ty;
     for s in sizes.list.into_iter().rev() {
@@ -116,6 +74,119 @@ impl<'outer> HirLowerer<'outer> {
         }
     }
 
+    fn lower_return_types(&mut self, return_types: ast::TypeListOrVoid) -> hir::TypeListOrVoid {
+        let return_types_kind = match return_types.kind {
+            ast::TypeListOrVoidKind::TypeList(l) => {
+                hir::TypeListOrVoidKind::TypeList(l.mapped(|t| match t.kind {
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Array(t, s) => {
+                        lower_array_type(self.ast_type_to_hir_type(t), s)
+                    }
+                }))
+            }
+            ast::TypeListOrVoidKind::Void => hir::TypeListOrVoidKind::Void,
+        };
+        hir::TypeListOrVoid {
+            span: return_types.span,
+            kind: return_types_kind,
+        }
+    }
+
+    fn ast_type_to_hir_type(&mut self, ty: ast::Type) -> hir::Type {
+        match ty.kind {
+            ast::TypeKind::SingleUserType(t) => hir::Type::SingleUserType(t),
+            ast::TypeKind::DottedUserType(t) => hir::Type::DottedUserType(t),
+            ast::TypeKind::NativeType(t) => hir::Type::NativeType(t),
+            ast::TypeKind::ReadonlyType(t) => hir::Type::ReadonlyType(t),
+            ast::TypeKind::ReadonlyNativeType(t) => hir::Type::ReadonlyNativeType(t),
+            ast::TypeKind::Class(t) => hir::Type::Class(t),
+            ast::TypeKind::Let => hir::Type::Let,
+            ast::TypeKind::Error => hir::Type::Error,
+            ast::TypeKind::Map(b) => {
+                let (key, value) = *b;
+                let t0 = match key.kind {
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Array(t, s) => {
+                        let new = self.ast_type_to_hir_type(t);
+                        lower_array_type(new, s)
+                    }
+                };
+                let t1 = match value.kind {
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Array(t, s) => {
+                        let new = self.ast_type_to_hir_type(t);
+                        lower_array_type(new, s)
+                    }
+                };
+                hir::Type::Map(Box::new((t0, t1)))
+            }
+            ast::TypeKind::MapIterator(b) => {
+                let (key, value) = *b;
+                let t0 = match key.kind {
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Array(t, s) => {
+                        let new = self.ast_type_to_hir_type(t);
+                        lower_array_type(new, s)
+                    }
+                };
+                let t1 = match value.kind {
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Array(t, s) => {
+                        let new = self.ast_type_to_hir_type(t);
+                        lower_array_type(new, s)
+                    }
+                };
+                hir::Type::MapIterator(Box::new((t0, t1)))
+            }
+            ast::TypeKind::DynArray(b) => {
+                let t = *b;
+                let t = match t.kind {
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Array(t, s) => {
+                        let new = self.ast_type_to_hir_type(t);
+                        lower_array_type(new, s)
+                    }
+                };
+                hir::Type::DynArray(Box::new(t))
+            }
+            ast::TypeKind::FuncPtr(ast::FuncPtrKind::Void) => {
+                hir::Type::FuncPtr(hir::FuncPtrKind::Void)
+            }
+            ast::TypeKind::FuncPtr(ast::FuncPtrKind::Detailed(f)) => {
+                let flag = match f.flag {
+                    ast::FuncPtrFlag::Ui => hir::FuncPtrFlag::Ui,
+                    ast::FuncPtrFlag::Play => hir::FuncPtrFlag::Play,
+                    ast::FuncPtrFlag::ClearScope => hir::FuncPtrFlag::ClearScope,
+                };
+                let return_types = self.lower_return_types(f.return_types);
+                let params_kind = match f.params.kind {
+                    ast::FuncPtrParamsKind::Void => hir::FuncPtrParamsKind::Void,
+                    ast::FuncPtrParamsKind::List(l) => hir::FuncPtrParamsKind::List(
+                        l.into_iter()
+                            .map(|p| {
+                                let mut res = hir::FuncPtrParam {
+                                    flags: hir::FuncParamFlags::empty(),
+                                    ty: self.ast_type_to_hir_type(p.ty),
+                                };
+                                self.lower_function_param_flags(&mut res.flags, p.span, p.flags);
+                                res
+                            })
+                            .collect(),
+                    ),
+                };
+                let params = hir::FuncPtrParams {
+                    span: f.params.span,
+                    kind: params_kind,
+                };
+                hir::Type::FuncPtr(hir::FuncPtrKind::Detailed(hir::FuncPtrDetailed {
+                    flag,
+                    return_types,
+                    params,
+                }))
+            }
+        }
+    }
+
     fn lower_variable_definition(
         &mut self,
         l: ast::LocalVariableDefinition,
@@ -125,19 +196,24 @@ impl<'outer> HirLowerer<'outer> {
             var_type,
             inits,
         } = l;
-        let base_type = ast_type_to_hir_type(var_type);
+        let base_type = self.ast_type_to_hir_type(var_type);
         inits
             .into_iter()
             .map(|i| {
-                let (name, var_type, init) = match i.kind {
-                    ast::VarInitKind::Single { name, val } => {
-                        (name, base_type.clone(), val.map(hir::VarInit::Single))
+                let (names, var_type, init) = match i.kind {
+                    ast::VarInitKind::Single { name, val } => (
+                        vec1![name],
+                        base_type.clone(),
+                        val.map(hir::VarInit::Single),
+                    ),
+                    ast::VarInitKind::Multi { names, val } => {
+                        (names, base_type.clone(), Some(hir::VarInit::Single(val)))
                     }
                     ast::VarInitKind::Array { name, sizes, vals } => {
                         match sizes {
                             Some(s) => {
                                 let t = lower_array_type(base_type.clone(), s);
-                                (name, t, vals.map(hir::VarInit::Compound))
+                                (vec1![name], t, vals.map(hir::VarInit::Compound))
                             }
                             None => {
                                 // the only way the parser can produce an Array kind with no sizes
@@ -153,7 +229,11 @@ impl<'outer> HirLowerer<'outer> {
                                     info_spans: vec![],
                                 });
                                 let val = init.list.into_iter().next().unwrap();
-                                (name, base_type.clone(), Some(hir::VarInit::Single(val)))
+                                (
+                                    vec1![name],
+                                    base_type.clone(),
+                                    Some(hir::VarInit::Single(val)),
+                                )
                             }
                         }
                     }
@@ -161,7 +241,7 @@ impl<'outer> HirLowerer<'outer> {
                 hir::LocalVariableDefinition {
                     span,
                     var_type,
-                    name,
+                    names,
                     init,
                 }
             })
@@ -176,7 +256,7 @@ impl<'outer> HirLowerer<'outer> {
             name,
             exprs,
         } = sca;
-        let arr_type = ast_type_to_hir_type(arr_type);
+        let arr_type = self.ast_type_to_hir_type(arr_type);
         hir::StaticConstArray {
             doc_comment,
             span,
@@ -401,27 +481,41 @@ impl<'outer> HirLowerer<'outer> {
         }
     }
 
+    fn lower_function_param_flags(
+        &mut self,
+        target: &mut hir::FuncParamFlags,
+        source_span: Span,
+        source: Vec<ast::ParamFlagItem>,
+    ) {
+        for f in source.into_iter().rev() {
+            match f.kind {
+                ast::ParamFlagItemKind::In => {
+                    dedup_flag!(source_span, self.errs, *target, hir::FuncParamFlags::IN);
+                }
+                ast::ParamFlagItemKind::Out => {
+                    dedup_flag!(source_span, self.errs, *target, hir::FuncParamFlags::OUT);
+                }
+                ast::ParamFlagItemKind::Optional => {
+                    dedup_flag!(
+                        source_span,
+                        self.errs,
+                        *target,
+                        hir::FuncParamFlags::OPTIONAL
+                    );
+                }
+            }
+        }
+    }
+
     fn lower_function_param(&mut self, p: ast::FuncParam) -> hir::FuncParam {
         let mut ret = hir::FuncParam {
             span: p.span,
             flags: hir::FuncParamFlags::empty(),
-            param_type: ast_type_to_hir_type(p.param_type),
+            param_type: self.ast_type_to_hir_type(p.param_type),
             name: p.name,
             init: p.init,
         };
-        for f in p.flags.into_iter().rev() {
-            match f.kind {
-                ast::ParamFlagItemKind::In => {
-                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::IN);
-                }
-                ast::ParamFlagItemKind::Out => {
-                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::OUT);
-                }
-                ast::ParamFlagItemKind::Optional => {
-                    dedup_flag!(p.span, self.errs, ret.flags, hir::FuncParamFlags::OPTIONAL);
-                }
-            }
-        }
+        self.lower_function_param_flags(&mut ret.flags, p.span, p.flags);
         ret
     }
 
@@ -517,7 +611,7 @@ impl<'outer> HirLowerer<'outer> {
                     if deprecated.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let version = parse_lump_version(&*version.symbol.string())
+                        let version = parse_lump_version(&version.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         deprecated = Some(hir::Deprecated { version, message });
                     }
@@ -526,7 +620,7 @@ impl<'outer> HirLowerer<'outer> {
                     if version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(&*v.symbol.string())
+                        let v = parse_lump_version(&v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         version = Some(v);
                     }
@@ -555,21 +649,7 @@ impl<'outer> HirLowerer<'outer> {
             }
         }
 
-        let return_types_kind = match return_types.kind {
-            ast::TypeListOrVoidKind::TypeList(l) => {
-                hir::TypeListOrVoidKind::TypeList(l.mapped(|t| match t.kind {
-                    ast::TypeOrArrayKind::Type(t) => ast_type_to_hir_type(t),
-                    ast::TypeOrArrayKind::Array(t, s) => {
-                        lower_array_type(ast_type_to_hir_type(t), s)
-                    }
-                }))
-            }
-            ast::TypeListOrVoidKind::Void => hir::TypeListOrVoidKind::Void,
-        };
-        let return_types = hir::TypeListOrVoid {
-            span: return_types.span,
-            kind: return_types_kind,
-        };
+        let return_types = self.lower_return_types(return_types);
 
         let params = match params.kind {
             ast::FuncParamsKind::Void => hir::FuncParams {
@@ -641,9 +721,9 @@ impl<'outer> HirLowerer<'outer> {
             ast::TypeListOrVoidKind::TypeList(l) if l.len() == 1 => {
                 let k = l.into_iter().next().unwrap().kind;
                 match k {
-                    ast::TypeOrArrayKind::Type(t) => ast_type_to_hir_type(t),
+                    ast::TypeOrArrayKind::Type(t) => self.ast_type_to_hir_type(t),
                     ast::TypeOrArrayKind::Array(t, e) => {
-                        let t = ast_type_to_hir_type(t);
+                        let t = self.ast_type_to_hir_type(t);
                         lower_array_type(t, e)
                     }
                 }
@@ -704,7 +784,7 @@ impl<'outer> HirLowerer<'outer> {
                     if version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(&*v.symbol.string())
+                        let v = parse_lump_version(&v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         version = Some(v);
                     }
@@ -713,7 +793,7 @@ impl<'outer> HirLowerer<'outer> {
                     if deprecated.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let version = parse_lump_version(&*version.symbol.string())
+                        let version = parse_lump_version(&version.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         deprecated = Some(hir::Deprecated { version, message });
                     }
@@ -1065,7 +1145,7 @@ impl<'outer> HirLowerer<'outer> {
                     if ret.version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(&*v.symbol.string())
+                        let v = parse_lump_version(&v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         ret.version = Some(v);
                     }
@@ -1220,7 +1300,7 @@ impl<'outer> HirLowerer<'outer> {
                     if ret.version.is_some() {
                         self.errs.push(shadow_warning(m.span));
                     } else {
-                        let v = parse_lump_version(&*v.symbol.string())
+                        let v = parse_lump_version(&v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         ret.version = Some(v);
                     }

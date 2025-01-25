@@ -245,6 +245,51 @@ pub struct DeclarationMetadataItem {
 }
 
 #[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum FuncPtrFlag {
+    Ui,
+    Play,
+    ClearScope,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct FuncPtrParam {
+    pub span: Span,
+    pub flags: Vec<ParamFlagItem>,
+    pub ty: Type,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum FuncPtrParamsKind {
+    Void,
+    List(Vec<FuncPtrParam>),
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct FuncPtrParams {
+    pub span: Span,
+    pub kind: FuncPtrParamsKind,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct FuncPtrDetailed {
+    pub flag: FuncPtrFlag,
+    pub return_types: TypeListOrVoid,
+    pub params: FuncPtrParams,
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum FuncPtrKind {
+    Void,
+    Detailed(FuncPtrDetailed),
+}
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
@@ -255,6 +300,8 @@ pub enum TypeKind {
     ReadonlyNativeType(Identifier),
     Class(Option<DottableId>),
     Map(Box<(TypeOrArray, TypeOrArray)>),
+    MapIterator(Box<(TypeOrArray, TypeOrArray)>),
+    FuncPtr(FuncPtrKind),
     DynArray(Box<TypeOrArray>),
     Let,
 
@@ -389,6 +436,10 @@ pub enum VarInitKind {
     Single {
         name: Identifier,
         val: Option<Expression>,
+    },
+    Multi {
+        names: Vec1<Identifier>,
+        val: Expression,
     },
     Array {
         name: Identifier,

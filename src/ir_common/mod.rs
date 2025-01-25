@@ -104,7 +104,7 @@ pub(crate) fn parse_lump_version(s: &str) -> Option<VersionInfo> {
     let mut s = s;
 
     s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
-    let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
+    let (s0, s1) = split_once_inclusive(s, |c| !c.is_ascii_digit());
     s = s1;
     let major = s0.parse::<u16>().ok()?;
     if !s.starts_with('.') {
@@ -113,21 +113,21 @@ pub(crate) fn parse_lump_version(s: &str) -> Option<VersionInfo> {
     s = &s[1..];
 
     s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
-    let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
+    let (s0, s1) = split_once_inclusive(s, |c| !c.is_ascii_digit());
     s = s1;
     let minor = s0.parse::<u16>().ok()?;
 
     let revision = if s.starts_with('.') {
         s = &s[1..];
         s = split_once_inclusive(s, |c| ![' ', '\n', '\t', '\r'].contains(&c)).1;
-        let (s0, s1) = split_once_inclusive(s, |c| !('0'..'9').contains(&c));
+        let (s0, s1) = split_once_inclusive(s, |c| !c.is_ascii_digit());
         s = s1;
         s0.parse::<u16>().ok()?
     } else {
         0
     };
 
-    if s.chars().next() != None {
+    if s.chars().next().is_some() {
         return None;
     }
 

@@ -38,9 +38,9 @@ impl ParsingError {
                 let ranges = ret
                     .file_lines
                     .entry(s.file)
-                    .or_insert_with(BTreeMap::new)
+                    .or_default()
                     .entry(l.line)
-                    .or_insert_with(ErrorLineRanges::default);
+                    .or_default();
 
                 ranges.main.push(l.range);
             }
@@ -52,9 +52,9 @@ impl ParsingError {
                 let ranges = ret
                     .file_lines
                     .entry(s.file)
-                    .or_insert_with(BTreeMap::new)
+                    .or_default()
                     .entry(l.line)
-                    .or_insert_with(ErrorLineRanges::default);
+                    .or_default();
 
                 ranges.info.push(l.range);
             }
@@ -103,7 +103,7 @@ impl std::fmt::Display for DisplayedParsingErrors {
 
 impl std::error::Error for DisplayedParsingErrors {}
 
-pub fn sort_errs(errs: &mut Vec<ParsingError>) {
+pub fn sort_errs(errs: &mut [ParsingError]) {
     errs.sort_unstable_by_key(|err| *err.main_spans.iter().min().unwrap());
 }
 
