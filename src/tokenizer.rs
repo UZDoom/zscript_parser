@@ -404,7 +404,7 @@ impl<'src> Tokenizer<'src> {
                     &self.text[self.current_range.start + 2..self.current_range.end],
                     16,
                 )
-                .unwrap_or(u64::max_value());
+                .unwrap_or(u64::MAX);
                 let (long, unsigned) = self.int_suffix();
                 let res = &self.text[self.current_range.clone()];
                 let data = TokenData::Int {
@@ -463,7 +463,7 @@ impl<'src> Tokenizer<'src> {
                 .find(|c: char| !('0'..='7').contains(&c))
                 .unwrap_or(s.len());
             let s = &s[..i];
-            let val = u64::from_str_radix(s, 8).unwrap_or(u64::max_value());
+            let val = u64::from_str_radix(s, 8).unwrap_or(u64::MAX);
 
             let (long, unsigned) = self.int_suffix();
             let res = &self.text[self.current_range.clone()];
@@ -479,7 +479,7 @@ impl<'src> Tokenizer<'src> {
         } else {
             let val = self.text[self.current_range.clone()]
                 .parse::<u64>()
-                .unwrap_or(u64::max_value());
+                .unwrap_or(u64::MAX);
             let (long, unsigned) = self.int_suffix();
             let res = &self.text[self.current_range.clone()];
             let data = TokenData::Int {
