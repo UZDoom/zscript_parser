@@ -2682,6 +2682,7 @@ impl<'src> Parser<'src> {
             Keyword::Play,
             Keyword::Version,
             Keyword::Deprecated,
+            Keyword::Unsafe,
         ]) {
             match k {
                 Keyword::Native => {
@@ -2750,6 +2751,21 @@ impl<'src> Parser<'src> {
                     ret.push(StructMetadataItem {
                         span: s0.combine(sr),
                         kind: StructMetadataItemKind::Deprecated { version, message },
+                    });
+                }
+                Keyword::Unsafe => {
+                    let ex = self.get_punc(&[Punctuation::LeftRound]);
+                    self.expect(ex, "`(`")?;
+
+                    let ex = self.get_keyword(&[Keyword::Internal]);
+                    self.expect(ex, "`internal`")?;
+
+                    let ex = self.get_punc(&[Punctuation::RightRound]);
+                    let (_, s1) = self.expect(ex, "`)`")?;
+
+                    ret.push(StructMetadataItem {
+                        span: s0.combine(s1),
+                        kind: StructMetadataItemKind::UnsafeInternal,
                     });
                 }
                 _ => unreachable!(),
@@ -3674,6 +3690,17 @@ mod test {
                     readOnly<int> i = 0;
                 }
             }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn struct_unsafe_internal() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            struct TheThing unsafe(internal) {}
         "#;
 
         assert_no_errors(build_parser(SOURCE).parse());

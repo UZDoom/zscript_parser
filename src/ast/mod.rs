@@ -158,6 +158,7 @@ pub enum StructMetadataItemKind {
     Native,
     UI,
     Play,
+    UnsafeInternal,
     Version(StringConst),
     Deprecated {
         version: StringConst,

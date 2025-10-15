@@ -1322,6 +1322,14 @@ impl<'outer> HirLowerer<'outer> {
                         hir::StructDefinitionFlags::CLEAR_SCOPE
                     )
                 }
+                ast::StructMetadataItemKind::UnsafeInternal => {
+                    dedup_flag!(
+                        m.span,
+                        self.errs,
+                        ret.flags,
+                        hir::StructDefinitionFlags::UNSAFE_INTERNAL
+                    )
+                }
 
                 ast::StructMetadataItemKind::Version(v) => {
                     if ret.version.is_some() {

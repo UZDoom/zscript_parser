@@ -127,10 +127,11 @@ pub struct MixinClassDefinition {
 bitflags! {
     #[cfg_attr(feature = "serialize", derive(Serialize))]
     pub struct StructDefinitionFlags: u8 {
-        const CLEAR_SCOPE = 1 << 0;
-        const NATIVE      = 1 << 1;
-        const UI          = 1 << 2;
-        const PLAY        = 1 << 3;
+        const CLEAR_SCOPE     = 1 << 0;
+        const NATIVE          = 1 << 1;
+        const UI              = 1 << 2;
+        const PLAY            = 1 << 3;
+        const UNSAFE_INTERNAL = 1 << 4;
     }
 }
 
