@@ -230,6 +230,7 @@ rule_grouping_type!(Keyword, keyword, match_keyword {
     "version"      => Version,
     "action"       => Action,
     "readonly"     => ReadOnly,
+    "unsafe"       => Unsafe,
     "internal"     => Internal,
     "let"          => Let
 });
