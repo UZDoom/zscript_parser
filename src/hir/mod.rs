@@ -190,20 +190,21 @@ pub struct StaticConstArray {
 bitflags! {
     #[cfg_attr(feature = "serialize", derive(Serialize))]
     pub struct FunctionFlags: u16 {
-        const NATIVE        = 1 << 0;
-        const STATIC        = 1 << 1;
-        const PRIVATE       = 1 << 2;
-        const PROTECTED     = 1 << 3;
-        const FINAL         = 1 << 4;
-        const TRANSIENT     = 1 << 5;
-        const VIRTUAL       = 1 << 6;
-        const OVERRIDE      = 1 << 7;
-        const ABSTRACT      = 1 << 8;
-        const VAR_ARG       = 1 << 9;
-        const UI            = 1 << 10;
-        const PLAY          = 1 << 11;
-        const CLEAR_SCOPE   = 1 << 12;
-        const VIRTUAL_SCOPE = 1 << 13;
+        const NATIVE             = 1 << 0;
+        const STATIC             = 1 << 1;
+        const PRIVATE            = 1 << 2;
+        const PROTECTED          = 1 << 3;
+        const FINAL              = 1 << 4;
+        const TRANSIENT          = 1 << 5;
+        const VIRTUAL            = 1 << 6;
+        const OVERRIDE           = 1 << 7;
+        const ABSTRACT           = 1 << 8;
+        const VAR_ARG            = 1 << 9;
+        const UI                 = 1 << 10;
+        const PLAY               = 1 << 11;
+        const CLEAR_SCOPE        = 1 << 12;
+        const VIRTUAL_SCOPE      = 1 << 13;
+        const UNSAFE_CLEAR_SCOPE = 1 << 14;
     }
 }
 

@@ -1952,6 +1952,7 @@ impl<'src> Parser<'src> {
                 Keyword::UI,
                 Keyword::Play,
                 Keyword::ClearScope,
+                Keyword::Unsafe,
                 Keyword::VirtualScope,
                 Keyword::Action,
                 Keyword::Deprecated,
@@ -2067,6 +2068,21 @@ impl<'src> Parser<'src> {
                         });
                     }
 
+                    Keyword::Unsafe => {
+                        let ex = self.get_punc(&[Punctuation::LeftRound]);
+                        self.expect(ex, "`(`")?;
+
+                        let ex = self.get_keyword(&[Keyword::ClearScope]);
+                        self.expect(ex, "`clearscope`")?;
+
+                        let ex = self.get_punc(&[Punctuation::RightRound]);
+                        let (_, s1) = self.expect(ex, "`)`")?;
+
+                        ret.push(DeclarationMetadataItem {
+                            span: s0.combine(s1),
+                            kind: DeclarationMetadataItemKind::UnsafeClearScope,
+                        });
+                    }
                     Keyword::Action => {
                         let (types, s) = if self.get_punc(&[Punctuation::LeftRound]).is_some() {
                             let types = self.get_ident_list()?;
@@ -3733,6 +3749,20 @@ mod test {
                 void functionAgain() unsafe(const) {
                     readOnly<int> i = 0;
                 }
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn decl_clearscope() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class the_test {
+                clearscope void function() {}
+                unsafe(clearscope) void functionAgain() {}
             }
         "#;
 

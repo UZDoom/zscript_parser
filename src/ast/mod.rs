@@ -239,6 +239,7 @@ pub enum DeclarationMetadataItemKind {
     UI,
     Play,
     ClearScope,
+    UnsafeClearScope,
     VirtualScope,
     Deprecated {
         version: StringConst,

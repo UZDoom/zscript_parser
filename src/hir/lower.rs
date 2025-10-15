@@ -603,6 +603,14 @@ impl<'outer> HirLowerer<'outer> {
                 ast::DeclarationMetadataItemKind::ClearScope => {
                     dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::CLEAR_SCOPE);
                 }
+                ast::DeclarationMetadataItemKind::UnsafeClearScope => {
+                    dedup_flag!(
+                        m.span,
+                        self.errs,
+                        flags,
+                        hir::FunctionFlags::UNSAFE_CLEAR_SCOPE
+                    );
+                }
                 ast::DeclarationMetadataItemKind::VirtualScope => {
                     dedup_flag!(m.span, self.errs, flags, hir::FunctionFlags::VIRTUAL_SCOPE);
                 }
