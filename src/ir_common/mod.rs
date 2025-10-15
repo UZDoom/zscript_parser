@@ -401,3 +401,11 @@ pub struct NonWhitespace {
     pub span: Span,
     pub symbol: NameSymbol,
 }
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionDeclarationConstKind {
+    Not,
+    Const,
+    UnsafeConst,
+}

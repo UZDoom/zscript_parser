@@ -2182,7 +2182,22 @@ impl<'src> Parser<'src> {
         if let Some((_, s)) = self.get_punc(&[Punctuation::LeftRound]) {
             let params = self.get_func_params(s)?;
 
-            let constant = self.get_keyword(&[Keyword::Const]).is_some();
+            let constant = if self.get_keyword(&[Keyword::Const]).is_some() {
+                FunctionDeclarationConstKind::Const
+            } else if self.get_keyword(&[Keyword::Unsafe]).is_some() {
+                let ex = self.get_punc(&[Punctuation::LeftRound]);
+                self.expect(ex, "`(`")?;
+
+                let ex = self.get_keyword(&[Keyword::Const]);
+                self.expect(ex, "`const`")?;
+
+                let ex = self.get_punc(&[Punctuation::RightRound]);
+                self.expect(ex, "`)`")?;
+
+                FunctionDeclarationConstKind::UnsafeConst
+            } else {
+                FunctionDeclarationConstKind::Not
+            };
 
             let (body, s1) = if let Some(c) = self.get_compound_statement()? {
                 let s = c.span;
@@ -3701,6 +3716,24 @@ mod test {
             version "3.7"
 
             struct TheThing unsafe(internal) {}
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn decl_const() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class the_test {
+                void function() const {
+                    readOnly<int> i = 0;
+                }
+                void functionAgain() unsafe(const) {
+                    readOnly<int> i = 0;
+                }
+            }
         "#;
 
         assert_no_errors(build_parser(SOURCE).parse());

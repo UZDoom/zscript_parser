@@ -406,7 +406,7 @@ pub struct FunctionDeclaration {
     pub doc_comment: Option<StringSymbol>,
     pub span: Span,
     pub name: Identifier,
-    pub constant: bool,
+    pub constant: FunctionDeclarationConstKind,
     pub metadata: Vec<DeclarationMetadataItem>,
     pub return_types: TypeListOrVoid,
     pub params: FuncParams,
