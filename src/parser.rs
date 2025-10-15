@@ -1690,6 +1690,12 @@ impl<'src> Parser<'src> {
                                 break;
                             };
                         };
+                        if let Some((_, span)) = self.get_punc(&[Punctuation::BitwiseAnd]) {
+                            flags.push(ParamFlagItem {
+                                span,
+                                kind: ParamFlagItemKind::Out,
+                            });
+                        }
                         let s0 = s0.unwrap_or(param_type.span);
                         params.push(FuncPtrParam {
                             span: s0,
@@ -1863,7 +1869,7 @@ impl<'src> Parser<'src> {
     }
 
     fn get_func_param(&mut self) -> Result<Option<FuncParam>, ParsingError> {
-        let (flags, s0) = self.get_func_param_flags()?;
+        let (mut flags, s0) = self.get_func_param_flags()?;
 
         let ex = self.get_single_type()?;
         let param_type = if let Some(t) = ex {
@@ -1876,6 +1882,13 @@ impl<'src> Parser<'src> {
             };
         };
         let s0 = s0.unwrap_or(param_type.span);
+
+        if let Some((_, span)) = self.get_punc(&[Punctuation::BitwiseAnd]) {
+            flags.push(ParamFlagItem {
+                span,
+                kind: ParamFlagItemKind::Out,
+            });
+        }
 
         let ex = self.get_ident();
         let name = self.expect(ex, "an identifier")?;
@@ -3792,6 +3805,20 @@ mod test {
             class the_test {
                 clearscope void function() {}
                 unsafe(clearscope) void functionAgain() {}
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn func_param_ampersand() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            struct TheThing {
+                void test(int& argument) {}
+                void anotherTest(Function<clearscope int (AType&, NotByReference)>& harderArgument) {}
             }
         "#;
 
