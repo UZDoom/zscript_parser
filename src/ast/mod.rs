@@ -43,6 +43,8 @@ pub enum ClassMetadataItemKind {
     Native,
     UI,
     Play,
+    Final,
+    Sealed(Vec1<Identifier>),
     Version(StringConst),
     Replaces(DottableId),
 }

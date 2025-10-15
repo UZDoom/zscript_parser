@@ -56,6 +56,7 @@ bitflags! {
         const NATIVE   = 1 << 1;
         const UI       = 1 << 2;
         const PLAY     = 1 << 3;
+        const FINAL    = 1 << 4;
     }
 }
 
@@ -103,6 +104,7 @@ pub struct ClassDefinition {
     pub name: Identifier,
     pub ancestor: Option<Identifier>,
     pub flags: ClassDefinitionFlags,
+    pub sealed: Option<Vec1<Identifier>>,
     pub states: Vec<StatesItem>,
     pub defaults: Vec<DefaultStatement>,
     pub version: Option<VersionInfo>,

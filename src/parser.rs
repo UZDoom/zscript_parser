@@ -2341,6 +2341,8 @@ impl<'src> Parser<'src> {
             Keyword::Play,
             Keyword::Replaces,
             Keyword::Version,
+            Keyword::Sealed,
+            Keyword::Final,
         ]) {
             match k {
                 Keyword::Abstract => {
@@ -2365,6 +2367,26 @@ impl<'src> Parser<'src> {
                     ret.push(ClassMetadataItem {
                         span: s0,
                         kind: ClassMetadataItemKind::Play,
+                    });
+                }
+                Keyword::Final => {
+                    ret.push(ClassMetadataItem {
+                        span: s0,
+                        kind: ClassMetadataItemKind::Final,
+                    });
+                }
+                Keyword::Sealed => {
+                    let ex = self.get_punc(&[Punctuation::LeftRound]);
+                    self.expect(ex, "`(`")?;
+
+                    let ident_list = self.get_ident_list()?;
+
+                    let ex = self.get_punc(&[Punctuation::RightRound]);
+                    let (_, s1) = self.expect(ex, "`)`")?;
+
+                    ret.push(ClassMetadataItem {
+                        span: s0.combine(s1),
+                        kind: ClassMetadataItemKind::Sealed(ident_list),
                     });
                 }
                 Keyword::Replaces => {
@@ -3592,6 +3614,18 @@ mod test {
                     readOnly<int> i = 0;
                 }
             }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn sealed_final() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class MyClass sealed(AnotherClass) {}
+            class MyOtherClass final {}
         "#;
 
         assert_no_errors(build_parser(SOURCE).parse());

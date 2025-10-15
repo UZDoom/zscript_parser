@@ -205,6 +205,7 @@ rule_grouping_type!(Keyword, keyword, match_keyword {
     "static"       => Static,
     "transient"    => Transient,
     "final"        => Final,
+    "sealed"       => Sealed,
     "extend"       => Extend,
     "protected"    => Protected,
     "private"      => Private,

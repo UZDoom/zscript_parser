@@ -1105,6 +1105,7 @@ impl<'outer> HirLowerer<'outer> {
             flags: hir::ClassDefinitionFlags::empty(),
             version: None,
             replaces: None,
+            sealed: None,
 
             inners: HashMap::new(),
             states: vec![],
@@ -1139,6 +1140,21 @@ impl<'outer> HirLowerer<'outer> {
                         ret.flags,
                         hir::ClassDefinitionFlags::PLAY
                     );
+                }
+                ast::ClassMetadataItemKind::Final => {
+                    dedup_flag!(
+                        m.span,
+                        self.errs,
+                        ret.flags,
+                        hir::ClassDefinitionFlags::FINAL
+                    );
+                }
+                ast::ClassMetadataItemKind::Sealed(idents) => {
+                    if ret.version.is_some() {
+                        self.errs.push(shadow_warning(m.span));
+                    } else {
+                        ret.sealed = Some(idents);
+                    }
                 }
 
                 ast::ClassMetadataItemKind::Version(v) => {
