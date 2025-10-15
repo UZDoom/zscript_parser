@@ -255,12 +255,30 @@ fn unescape(s: &'_ str) -> Cow<'_, str> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct CharIndicesOffset<'src> {
+    char_indices: CharIndices<'src>,
+    offset: usize,
+}
+impl<'src> Iterator for CharIndicesOffset<'src> {
+    type Item = (usize, char);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.char_indices.next().map(|(p, c)| (p + self.offset, c))
+    }
+}
+impl<'src> CharIndicesOffset<'src> {
+    pub fn as_str(&self) -> &'src str {
+        self.char_indices.as_str()
+    }
+}
+
 #[derive(Debug)]
 pub struct Tokenizer<'src> {
     file: FileIndex,
     text: &'src str,
     current_range: Range<usize>,
-    remaining: CharIndices<'src>,
+    remaining: CharIndicesOffset<'src>,
     states_mode: bool,
     peeked: VecDeque<Option<Token<'src>>>,
 }
@@ -271,7 +289,7 @@ impl<'src> Tokenizer<'src> {
             file,
             text,
             current_range: 0..0,
-            remaining: text.char_indices(),
+            remaining: Self::make_remaining(text, 0),
             states_mode: false,
             peeked: VecDeque::new(),
         }
@@ -974,6 +992,13 @@ impl<'src> Tokenizer<'src> {
         )
     }
 
+    fn make_remaining(text: &'src str, position: usize) -> CharIndicesOffset<'src> {
+        CharIndicesOffset {
+            char_indices: text.char_indices(),
+            offset: position,
+        }
+    }
+
     pub(crate) fn next_no_doc(&mut self, errs: &mut Vec<ParsingError>) -> Option<Token<'src>> {
         while let Some(p) = self.peeked.pop_front() {
             if Self::doc_filter(&p) {
@@ -1032,6 +1057,12 @@ impl<'src> Tokenizer<'src> {
             self.peeked.push_back(r);
         }
         &self.peeked[0]
+    }
+
+    pub(crate) fn move_to_position(&mut self, position: usize) {
+        assert!(self.peeked.is_empty());
+        self.current_range = position..position;
+        self.remaining = Self::make_remaining(&self.text[position..], position);
     }
 }
 

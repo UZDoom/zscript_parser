@@ -310,6 +310,35 @@ impl<'src> Parser<'src> {
             None
         }
     }
+    fn get_right_angle(&mut self) -> Option<(Punctuation, Span)> {
+        let (punc, span) = self.get_punc(&[
+            Punctuation::RightAngle,
+            Punctuation::RightShift,
+            Punctuation::RightShiftAssign,
+            Punctuation::UnsignedRightShift,
+            Punctuation::UnsignedRightShiftAssign,
+            Punctuation::GreaterThanEquals,
+        ])?;
+        match punc {
+            Punctuation::RightAngle => Some((punc, span)),
+            Punctuation::RightShift
+            | Punctuation::RightShiftAssign
+            | Punctuation::UnsignedRightShift
+            | Punctuation::UnsignedRightShiftAssign
+            | Punctuation::GreaterThanEquals => {
+                self.tokenizer.move_to_position(span.start + 1);
+                Some((
+                    Punctuation::RightAngle,
+                    Span {
+                        file: span.file,
+                        start: span.start,
+                        end: span.start + 1,
+                    },
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
     fn get_specific_ident(&mut self, idents: &[&str]) -> Option<Identifier> {
         if let Some(Token {
             data: TokenData::Identifier(i),
@@ -617,7 +646,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_ident();
                 let cls = self.expect(ex, "an identifier")?;
 
-                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let ex = self.get_right_angle();
                 self.expect(ex, "`>`")?;
 
                 let ex = self.get_punc(&[Punctuation::RightRound]);
@@ -1517,7 +1546,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_dottable_id()?;
                 let inner = self.expect(ex, "an identifier")?;
 
-                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let ex = self.get_right_angle();
                 let (_, s1) = self.expect(ex, "`>`")?;
 
                 Ok(Some(Type {
@@ -1539,7 +1568,7 @@ impl<'src> Parser<'src> {
             let ex = self.get_ident();
             let inner = self.expect(ex, "an identifier")?;
 
-            let ex = self.get_punc(&[Punctuation::RightAngle]);
+            let ex = self.get_right_angle();
             let (_, s1) = self.expect(ex, "`>`")?;
 
             Ok(Some(if native {
@@ -1563,7 +1592,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_type_or_array()?;
                 let inner = self.expect(ex, "a type or array")?;
 
-                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let ex = self.get_right_angle();
                 let (_, s1) = self.expect(ex, "`>`")?;
 
                 Ok(Some(Type {
@@ -1583,7 +1612,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_type_or_array()?;
                 let value = self.expect(ex, "a type or array")?;
 
-                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let ex = self.get_right_angle();
                 let (_, s1) = self.expect(ex, "`>`")?;
 
                 Ok(Some(Type {
@@ -1603,7 +1632,7 @@ impl<'src> Parser<'src> {
                 let ex = self.get_type_or_array()?;
                 let value = self.expect(ex, "a type or array")?;
 
-                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let ex = self.get_right_angle();
                 let (_, s1) = self.expect(ex, "`>`")?;
 
                 Ok(Some(Type {
@@ -1615,7 +1644,7 @@ impl<'src> Parser<'src> {
                 self.expect(ex, "`<`")?;
 
                 if self.get_specific_ident(&["void"]).is_some() {
-                    let ex = self.get_punc(&[Punctuation::RightAngle]);
+                    let ex = self.get_right_angle();
                     let right_angle_span = self.expect(ex, "`>`")?.1;
 
                     return Ok(Some(Type {
@@ -1649,7 +1678,7 @@ impl<'src> Parser<'src> {
                             break;
                         }
                         first = false;
-                        let (flags, s0) = self.get_func_param_flags()?;
+                        let (mut flags, s0) = self.get_func_param_flags()?;
 
                         let ex = self.get_single_type()?;
                         let param_type = if let Some(t) = ex {
@@ -1679,7 +1708,7 @@ impl<'src> Parser<'src> {
                     kind: params_kind,
                 };
 
-                let ex = self.get_punc(&[Punctuation::RightAngle]);
+                let ex = self.get_right_angle();
                 let right_angle_span = self.expect(ex, "`>`")?.1;
 
                 Ok(Some(Type {
@@ -3779,6 +3808,74 @@ mod test {
         "#;
 
         assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn double_right_angle_generic() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            struct TheThing {
+                Array<ReadOnly<int>> stuff;
+                Array<Array<Map<int, int>>> stuffAgain;
+                Array<Array<Array<Array<Map<MapIterator<int, int>, Map<int, int>>>>>> evil;
+                Array<Array<Array<Array<Map<MapIterator<int, int>, Map<int, int
+                    /// doc comment!
+                >>>>>> worse;
+            }
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+
+        const SOURCE2: &str = r#"
+            version "3.7"
+
+            struct TheThing {
+                Array<Array<int>>= hi;
+            }
+        "#;
+
+        let parser = build_parser(SOURCE2);
+        let file = parser.file;
+
+        assert_errors(
+            parser.parse(),
+            &[ParsingError {
+                level: ParsingErrorLevel::Error,
+                msg: "expected an identifier, got `=`".to_string(),
+                main_spans: vec1![Span {
+                    file,
+                    start: 91,
+                    end: 92
+                }],
+                info_spans: vec![],
+            }],
+        );
+
+        const SOURCE3: &str = r#"
+            version "3.7"
+
+            struct TheThing {
+                Array<Array<int>>== hi;
+            }
+        "#;
+
+        let parser = build_parser(SOURCE3);
+        let file = parser.file;
+
+        assert_errors(
+            parser.parse(),
+            &[ParsingError {
+                level: ParsingErrorLevel::Error,
+                msg: "expected an identifier, got `==`".to_string(),
+                main_spans: vec1![Span {
+                    file,
+                    start: 91,
+                    end: 93
+                }],
+                info_spans: vec![],
+            }],
+        );
     }
 
     #[test]
