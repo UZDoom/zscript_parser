@@ -1105,6 +1105,7 @@ impl<'outer> HirLowerer<'outer> {
             flags: hir::ClassDefinitionFlags::empty(),
             version: None,
             replaces: None,
+            deprecated: None,
             sealed: None,
 
             inners: HashMap::new(),
@@ -1164,6 +1165,15 @@ impl<'outer> HirLowerer<'outer> {
                         let v = parse_lump_version(&v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         ret.version = Some(v);
+                    }
+                }
+                ast::ClassMetadataItemKind::Deprecated { version, message } => {
+                    if ret.deprecated.is_some() {
+                        self.errs.push(shadow_warning(m.span));
+                    } else {
+                        let version = parse_lump_version(&version.symbol.string())
+                            .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
+                        ret.deprecated = Some(hir::Deprecated { version, message });
                     }
                 }
                 ast::ClassMetadataItemKind::Replaces(r) => {
@@ -1278,6 +1288,7 @@ impl<'outer> HirLowerer<'outer> {
 
             flags: hir::StructDefinitionFlags::empty(),
             version: None,
+            deprecated: None,
 
             inners: HashMap::new(),
         };
@@ -1319,6 +1330,15 @@ impl<'outer> HirLowerer<'outer> {
                         let v = parse_lump_version(&v.symbol.string())
                             .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
                         ret.version = Some(v);
+                    }
+                }
+                ast::StructMetadataItemKind::Deprecated { version, message } => {
+                    if ret.deprecated.is_some() {
+                        self.errs.push(shadow_warning(m.span));
+                    } else {
+                        let version = parse_lump_version(&version.symbol.string())
+                            .unwrap_or_else(|| VersionInfo::new(65535, 0, 0));
+                        ret.deprecated = Some(hir::Deprecated { version, message });
                     }
                 }
             }

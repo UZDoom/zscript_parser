@@ -108,6 +108,7 @@ pub struct ClassDefinition {
     pub states: Vec<StatesItem>,
     pub defaults: Vec<DefaultStatement>,
     pub version: Option<VersionInfo>,
+    pub deprecated: Option<Deprecated>,
     pub replaces: Option<DottableId>,
     pub inners: HashMap<NameSymbol, Vec1<ClassInner>>,
 }
@@ -172,6 +173,7 @@ pub struct StructDefinition {
     pub name: Identifier,
     pub flags: StructDefinitionFlags,
     pub version: Option<VersionInfo>,
+    pub deprecated: Option<Deprecated>,
     pub inners: HashMap<NameSymbol, Vec1<StructInner>>,
 }
 

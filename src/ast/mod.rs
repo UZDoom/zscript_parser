@@ -47,6 +47,10 @@ pub enum ClassMetadataItemKind {
     Sealed(Vec1<Identifier>),
     Version(StringConst),
     Replaces(DottableId),
+    Deprecated {
+        version: StringConst,
+        message: Option<StringConst>,
+    },
 }
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]
@@ -155,6 +159,10 @@ pub enum StructMetadataItemKind {
     UI,
     Play,
     Version(StringConst),
+    Deprecated {
+        version: StringConst,
+        message: Option<StringConst>,
+    },
 }
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[derive(Debug, Clone, PartialEq)]

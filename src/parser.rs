@@ -2341,6 +2341,7 @@ impl<'src> Parser<'src> {
             Keyword::Play,
             Keyword::Replaces,
             Keyword::Version,
+            Keyword::Deprecated,
             Keyword::Sealed,
             Keyword::Final,
         ]) {
@@ -2411,6 +2412,35 @@ impl<'src> Parser<'src> {
                     ret.push(ClassMetadataItem {
                         span: s0.combine(s1),
                         kind: ClassMetadataItemKind::Version(version),
+                    });
+                }
+                Keyword::Deprecated => {
+                    let ex = self.get_punc(&[Punctuation::LeftRound]);
+                    self.expect(ex, "`(`")?;
+
+                    let ex = self.get_string();
+                    let version = self.expect(ex, "a string constant")?;
+
+                    let message = if self.get_punc(&[Punctuation::Comma]).is_some() {
+                        let ex = self.get_string();
+                        Some(self.expect(ex, "a string constant")?)
+                    } else {
+                        None
+                    };
+
+                    let ex = self.get_punc(&[Punctuation::RightRound]);
+                    let (_, sr) = self.expect(
+                        ex,
+                        if message.is_some() {
+                            "`)`"
+                        } else {
+                            "`,` or `)`"
+                        },
+                    )?;
+
+                    ret.push(ClassMetadataItem {
+                        span: s0.combine(sr),
+                        kind: ClassMetadataItemKind::Deprecated { version, message },
                     });
                 }
                 _ => unreachable!(),
@@ -2651,6 +2681,7 @@ impl<'src> Parser<'src> {
             Keyword::ClearScope,
             Keyword::Play,
             Keyword::Version,
+            Keyword::Deprecated,
         ]) {
             match k {
                 Keyword::Native => {
@@ -2690,6 +2721,35 @@ impl<'src> Parser<'src> {
                     ret.push(StructMetadataItem {
                         span: s0.combine(s1),
                         kind: StructMetadataItemKind::Version(version),
+                    });
+                }
+                Keyword::Deprecated => {
+                    let ex = self.get_punc(&[Punctuation::LeftRound]);
+                    self.expect(ex, "`(`")?;
+
+                    let ex = self.get_string();
+                    let version = self.expect(ex, "a string constant")?;
+
+                    let message = if self.get_punc(&[Punctuation::Comma]).is_some() {
+                        let ex = self.get_string();
+                        Some(self.expect(ex, "a string constant")?)
+                    } else {
+                        None
+                    };
+
+                    let ex = self.get_punc(&[Punctuation::RightRound]);
+                    let (_, sr) = self.expect(
+                        ex,
+                        if message.is_some() {
+                            "`)`"
+                        } else {
+                            "`,` or `)`"
+                        },
+                    )?;
+
+                    ret.push(StructMetadataItem {
+                        span: s0.combine(sr),
+                        kind: StructMetadataItemKind::Deprecated { version, message },
                     });
                 }
                 _ => unreachable!(),
