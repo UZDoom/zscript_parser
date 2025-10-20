@@ -524,6 +524,11 @@ pub enum StatementKind {
         update: Option<ExprList>,
         body: Box<Statement>,
     },
+    ForEach {
+        kind: ForEachKind,
+        iterator: Expression,
+        body: Box<Statement>,
+    },
     Break,
     Continue,
     Return(Option<ExprList>),

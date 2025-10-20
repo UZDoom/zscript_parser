@@ -1334,6 +1334,79 @@ impl<'src> Parser<'src> {
         }))
     }
 
+    fn get_foreach_to_colon(&mut self) -> Result<ForEachKind, ParsingError> {
+        let ex = self.get_ident();
+        let first = self.expect(ex, "an identifier")?;
+
+        let typed_second_maybe = self.get_ident();
+
+        if let Some(second) = typed_second_maybe {
+            let ex = self.get_punc(&[Punctuation::Colon]);
+            self.expect(ex, "`:`")?;
+
+            return Ok(ForEachKind::Typed {
+                ty: first,
+                name: second,
+            });
+        }
+
+        let ex = self.get_punc(&[Punctuation::Comma, Punctuation::Colon]);
+        let (p, _) = self.expect(ex, "`,`, `:` or an identifier")?;
+        if p == Punctuation::Colon {
+            return Ok(ForEachKind::Single { name: first });
+        }
+
+        let ex = self.get_ident();
+        let second = self.expect(ex, "an identifier")?;
+
+        let ex = self.get_punc(&[Punctuation::Comma, Punctuation::Colon]);
+        let (p, _) = self.expect(ex, "`,` or `:`")?;
+        if p == Punctuation::Colon {
+            return Ok(ForEachKind::KeyVal {
+                key: first,
+                val: second,
+            });
+        }
+
+        let ex = self.get_ident();
+        let third = self.expect(ex, "an identifier")?;
+
+        let ex = self.get_punc(&[Punctuation::Colon]);
+        self.expect(ex, "`:`")?;
+
+        Ok(ForEachKind::ThreeVal {
+            var: first,
+            pos: second,
+            flags: third,
+        })
+    }
+
+    fn get_foreach_body(&mut self, s0: Span) -> Result<Option<Statement>, ParsingError> {
+        let ex = self.get_punc(&[Punctuation::LeftRound]);
+        self.expect(ex, "`(`")?;
+
+        let kind = self.get_foreach_to_colon()?;
+
+        let ex = self.get_expr()?;
+        let iterator = self.expect(ex, "an expression")?;
+
+        let ex = self.get_punc(&[Punctuation::RightRound]);
+        self.expect(ex, "`)`")?;
+
+        let ex = self.get_statement()?;
+        let body = self.expect(ex, "a statement")?;
+        let body = Box::new(body);
+
+        Ok(Some(Statement {
+            span: s0.combine(body.span),
+            kind: StatementKind::ForEach {
+                kind,
+                iterator,
+                body,
+            },
+        }))
+    }
+
     fn get_static_const_body(
         &mut self,
         s0: Span,
@@ -1418,6 +1491,7 @@ impl<'src> Parser<'src> {
             Keyword::If,
             Keyword::Switch,
             Keyword::For,
+            Keyword::ForEach,
             Keyword::While,
             Keyword::Until,
             Keyword::Do,
@@ -1432,6 +1506,7 @@ impl<'src> Parser<'src> {
                 Keyword::If => self.get_if_body(s0),
                 Keyword::Switch => self.get_switch_body(s0),
                 Keyword::For => self.get_for_body(s0),
+                Keyword::ForEach => self.get_foreach_body(s0),
                 Keyword::While | Keyword::Until => self.get_while_until_body(k, s0),
                 Keyword::Do => self.get_do_body(s0),
                 Keyword::Static => {
@@ -3832,6 +3907,24 @@ mod test {
 
             class MyClass sealed(AnotherClass) {}
             class MyOtherClass final {}
+        "#;
+
+        assert_no_errors(build_parser(SOURCE).parse());
+    }
+
+    #[test]
+    fn foreach() {
+        const SOURCE: &str = r#"
+            version "3.7"
+
+            class MyClass {
+                void test() {
+                    foreach (x : v) {}
+                    foreach (x, y : v) {}
+                    foreach (x, y, z : v) {}
+                    foreach (t x : v) {}
+                }
+            }
         "#;
 
         assert_no_errors(build_parser(SOURCE).parse());

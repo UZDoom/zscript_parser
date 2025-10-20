@@ -409,3 +409,25 @@ pub enum FunctionDeclarationConstKind {
     Const,
     UnsafeConst,
 }
+
+#[cfg_attr(feature = "serialize", derive(Serialize))]
+#[cfg_attr(feature = "serialize", serde(tag = "kind", content = "def"))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForEachKind {
+    Single {
+        name: Identifier,
+    },
+    KeyVal {
+        key: Identifier,
+        val: Identifier,
+    },
+    ThreeVal {
+        var: Identifier,
+        pos: Identifier,
+        flags: Identifier,
+    },
+    Typed {
+        ty: Identifier,
+        name: Identifier,
+    },
+}

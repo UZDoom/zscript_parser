@@ -478,6 +478,17 @@ impl<'outer> HirLowerer<'outer> {
                 });
                 add_simple!(hir::StatementKind::Loop(outer));
             }
+            ast::StatementKind::ForEach {
+                kind,
+                iterator,
+                body,
+            } => {
+                add_simple!(hir::StatementKind::ForEach {
+                    kind,
+                    iterator,
+                    body: self.lower_compound_statement(statement_to_compound(*body)),
+                });
+            }
         }
     }
 

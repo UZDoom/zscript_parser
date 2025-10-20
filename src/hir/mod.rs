@@ -404,6 +404,13 @@ pub enum StatementKind {
         body: CompoundStatement,
     },
     Loop(CompoundStatement),
+    // i'd love to have all loops become Loop, but ForEach needs type info to do that
+    // - so it needs to be a later lowering pass
+    ForEach {
+        kind: ForEachKind,
+        iterator: Expression,
+        body: CompoundStatement,
+    },
     Break,
     Continue,
     Return(Option<ExprList>),
