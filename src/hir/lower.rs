@@ -791,6 +791,9 @@ impl<'outer> HirLowerer<'outer> {
                 ast::DeclarationMetadataItemKind::Play => {
                     dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::PLAY);
                 }
+                ast::DeclarationMetadataItemKind::NoRollback => {
+                    dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::NO_ROLLBACK);
+                }
 
                 ast::DeclarationMetadataItemKind::Meta if !for_struct => {
                     dedup_flag!(m.span, self.errs, flags, hir::MemberFlags::META);

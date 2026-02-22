@@ -2069,6 +2069,7 @@ impl<'src> Parser<'src> {
                 Keyword::UI,
                 Keyword::Play,
                 Keyword::ClearScope,
+                Keyword::NoRollback,
                 Keyword::Unsafe,
                 Keyword::VirtualScope,
                 Keyword::Action,
@@ -2176,6 +2177,12 @@ impl<'src> Parser<'src> {
                         ret.push(DeclarationMetadataItem {
                             span: s0,
                             kind: DeclarationMetadataItemKind::ClearScope,
+                        });
+                    }
+                    Keyword::NoRollback => {
+                        ret.push(DeclarationMetadataItem {
+                            span: s0,
+                            kind: DeclarationMetadataItemKind::NoRollback,
                         });
                     }
                     Keyword::VirtualScope => {

@@ -359,12 +359,13 @@ bitflags! {
         const VAR_ARG     = 1 << 6;
         const UI          = 1 << 7;
         const PLAY        = 1 << 8;
+        const NO_ROLLBACK = 1 << 9;
 
         // only allowed in classes, not structs
-        const META        = 1 << 9;
+        const META        = 1 << 10;
 
         // only allowed within the base archive
-        const CLEAR_SCOPE = 1 << 10;
+        const CLEAR_SCOPE = 1 << 11;
     }
 }
 

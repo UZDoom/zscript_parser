@@ -217,6 +217,7 @@ rule_grouping_type!(Keyword, keyword, match_keyword {
     "ui"           => UI,
     "play"         => Play,
     "clearscope"   => ClearScope,
+    "norollback"   => NoRollback,
     "virtualscope" => VirtualScope,
     "super"        => Super,
     "stop"         => Stop,
