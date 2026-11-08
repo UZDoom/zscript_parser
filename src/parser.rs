@@ -3766,7 +3766,11 @@ mod test {
 
     fn build_parser(text: &str) -> Parser {
         let mut files = Files::default();
-        let fndx = files.add(File::new("test.zs".to_string(), text.as_bytes().to_vec()));
+        let fndx = files.add(File::new(
+            "test".to_string(),
+            "test.zs".to_string(),
+            text.as_bytes().to_vec(),
+        ));
         Parser::new(fndx, text)
     }
 

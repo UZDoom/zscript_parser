@@ -135,8 +135,9 @@ impl ParsingErrorLines {
             let line_indicator_length = format!("{}", max_line + 1).len();
             let mut last_line = None;
             ret += &format!(
-                "{}--> {}\n",
+                "{}--> {}:{}\n",
                 " ".repeat(line_indicator_length),
+                file.archive,
                 file.filename
             );
             ret += &format!("{} |\n", " ".repeat(line_indicator_length));

@@ -2,9 +2,10 @@
 use rayon::prelude::*;
 
 use crate::ast::{TopLevel, TopLevelDefinitionKind};
-use crate::err::ParsingError;
+use crate::err::{ParsingError, ParsingErrorLevel};
 use crate::filesystem::{FileIndex, FileSystem, Files};
 use crate::parser::Parser;
+use vec1::vec1;
 
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[derive(Debug)]
@@ -38,6 +39,33 @@ pub fn parse_filesystem<F: FileSystem>(
     parse_filesystem_config(filesystem, files, errs, &ParseFileSystemConfig::default())
 }
 
+fn resolve_relative_include_path(from_file: &str, include: &str) -> Result<String, String> {
+    if !include.starts_with("./") && !include.starts_with("../") {
+        return Ok(include.to_string());
+    }
+    let mut adjusted_include = include;
+    let mut ret = from_file
+        .rsplit_once("/")
+        .map(|(left, _right)| left)
+        .unwrap_or("")
+        .to_string();
+    if let Some(a) = adjusted_include.strip_prefix("./") {
+        adjusted_include = a;
+    }
+    while let Some(a) = adjusted_include.strip_prefix("../") {
+        adjusted_include = a;
+        let Some(left) = ret.rsplit_once("/").map(|(left, _right)| left) else {
+            return Err(format!(
+                "too many `../`s for path relative to `{from_file}`"
+            ));
+        };
+        ret = left.to_string();
+    }
+    ret += "/";
+    ret += adjusted_include;
+    Ok(ret)
+}
+
 pub fn parse_filesystem_config<F: FileSystem>(
     mut filesystem: F,
     files: &mut Files,
@@ -65,8 +93,33 @@ pub fn parse_filesystem_config<F: FileSystem>(
             for d in r.ast.definitions.iter() {
                 if let TopLevelDefinitionKind::Include(s) = &d.kind {
                     let file = {
-                        let filename = s.symbol.string();
-                        filesystem.get_file(&filename).unwrap()
+                        let maybe_filename = resolve_relative_include_path(
+                            &files[r.file].filename,
+                            &s.symbol.string(),
+                        );
+                        let filename = match maybe_filename {
+                            Ok(filename) => filename,
+                            Err(e) => {
+                                errs.push(ParsingError {
+                                    level: ParsingErrorLevel::Error,
+                                    msg: e,
+                                    main_spans: vec1![s.span],
+                                    info_spans: vec![],
+                                });
+                                continue;
+                            }
+                        };
+                        let maybe_file = filesystem.get_file(&filename);
+                        let Some(f) = maybe_file else {
+                            errs.push(ParsingError {
+                                level: ParsingErrorLevel::Error,
+                                msg: format!("couldn't find file in #include statement (full path: {filename})"),
+                                main_spans: vec1![s.span],
+                                info_spans: vec![],
+                            });
+                            continue;
+                        };
+                        f
                     };
                     let f = files.add(file);
                     needed_files.push(f);

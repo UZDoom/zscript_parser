@@ -2,6 +2,7 @@ use crate::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct File {
+    pub(crate) archive: String,
     pub(crate) filename: String,
     pub(crate) data: Vec<u8>,
     pub(crate) text: String,
@@ -9,10 +10,11 @@ pub struct File {
 }
 
 impl File {
-    pub fn new(filename: String, data: Vec<u8>) -> Self {
+    pub fn new(archive: String, filename: String, data: Vec<u8>) -> Self {
         let text = String::from_utf8_lossy(&data).to_string();
         let lines = get_lines(&text);
         Self {
+            archive,
             filename,
             data,
             text,
@@ -20,6 +22,9 @@ impl File {
         }
     }
 
+    pub fn archive(&self) -> &str {
+        &self.archive
+    }
     pub fn filename(&self) -> &str {
         &self.filename
     }
@@ -116,7 +121,7 @@ mod gzd_folder_filesystem {
                     continue;
                 }
 
-                let literal_filename = &p.to_string_lossy()[root.len()..].to_string();
+                let literal_filename = p.to_string_lossy()[root.len()..].to_string();
                 let filename = literal_filename.to_ascii_lowercase();
                 let filename_no_ext =
                     p.with_extension("").to_string_lossy()[root.len()..].to_ascii_lowercase();
@@ -125,7 +130,7 @@ mod gzd_folder_filesystem {
                     continue;
                 }
                 let data = data.unwrap();
-                let f = File::new(format!("{}/{}", nice_root_name, literal_filename), data);
+                let f = File::new(nice_root_name.clone(), literal_filename, data);
                 files.insert(filename, f.clone());
                 files_no_ext
                     .entry(filename_no_ext)
@@ -159,13 +164,14 @@ mod gzd_folder_filesystem {
         fn test_folder_filesystem() {
             let d = format!("{}/test_files", env!("CARGO_MANIFEST_DIR"));
 
-            let mut sys = GZDoomFolderFileSystem::new(d, "test_files".to_string());
+            let mut sys = GZDoomFolderFileSystem::new(d, "test_files".to_string()).unwrap();
             let f = sys.get_file("something.txt").unwrap();
             assert_eq!(
                 f,
                 File::new(
-                    "test_files/something.txt".to_string(),
-                    "Hello!\n".to_string()
+                    "test_files".to_string(),
+                    "something.txt".to_string(),
+                    "Hello!\n".as_bytes().to_owned(),
                 )
             );
         }
